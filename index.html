@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hana Memoria AR</title>
+<script src="https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #fff; }
+  .overlay { position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; padding: 24px; text-align: center;
+    background: linear-gradient(160deg, #3b2a3f, #1d1521); }
+  .overlay h1 { margin: 0; font-size: 1.5rem; }
+  .overlay p { margin: 0; opacity: .8; max-width: 320px; line-height: 1.5; font-size: .95rem; }
+  button { border: 0; border-radius: 999px; padding: 14px 32px; font-size: 1rem; font-weight: 600;
+    background: #f4b6c8; color: #3b2a3f; }
+  button:disabled { opacity: .6; }
+  #hint { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    transform: translateX(-50%); z-index: 5; padding: 10px 18px; border-radius: 999px;
+    background: rgba(0,0,0,.55); font-size: .9rem; display: none; text-align: center; max-width: 85%; }
+  #sound { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 5;
+    width: 44px; height: 44px; padding: 0; font-size: 1.2rem; display: none; background: rgba(0,0,0,.55); color: #fff; }
+  #err { color: #ffb4b4; }
+  .vids { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; overflow: hidden; }
+</style>
+</head>
+<body>
+
+<div class="overlay" id="start">
+  <h1>Hana Memoria</h1>
+  <p id="msg">Arahkan kamera ke foto di frame untuk melihat video kenanganmu.</p>
+  <p id="err"></p>
+  <button id="startBtn">Mulai Scan</button>
+</div>
+
+<div id="hint">Arahkan kamera ke salah satu foto di frame</div>
+<button id="sound" aria-label="Suara">🔊</button>
+<div class="vids" id="vids"></div>
+
+<script>
+// ====== KONFIGURASI ======
+// URL publik bucket R2 (custom domain atau r2.dev), tanpa garis miring di akhir.
+const R2_BASE = "https://pub-af8000a544674549b3e28589ff094f83.r2.dev";
+// Jumlah foto/target di frame. Bisa diubah lewat URL: ?order=ABC123&n=12
+const DEFAULT_TARGET_COUNT = 12;
+const MAX_LOADED_VIDEOS = 3;   // batasi video yang tersimpan di memori (HP low-end)
+const MAX_RETRY = 3;
+// =========================
+
+const params = new URLSearchParams(location.search);
+const ORDER = params.get("order");
+const N = parseInt(params.get("n") || DEFAULT_TARGET_COUNT, 10);
+const pad = (i) => String(i + 1).padStart(2, "0");
+
+const $ = (id) => document.getElementById(id);
+const startEl = $("start"), startBtn = $("startBtn"), errEl = $("err"),
+      msgEl = $("msg"), hintEl = $("hint"), soundBtn = $("sound");
+
+function showError(text) {
+  errEl.textContent = text;
+  startEl.style.display = "flex";
+  startBtn.disabled = false;
+  startBtn.textContent = "Coba Lagi";
+}
+
+if (!ORDER) {
+  errEl.textContent = "Link tidak valid. Scan ulang QR code pada produkmu.";
+  startBtn.style.display = "none";
+} else {
+  init();
+}
+
+function init() {
+  const base = `${R2_BASE}/orders/${encodeURIComponent(ORDER)}`;
+  const videos = [];        // elemen <video> per target
+  const planes = [];        // plane A-Frame per target
+  const found = new Set();  // target yang sedang terlihat
+  const loadedOrder = [];   // urutan video yang sudah dimuat (LRU)
+  let muted = false;
+
+  // ----- scene -----
+  const scene = document.createElement("a-scene");
+  scene.setAttribute("mindar-image",
+    `imageTargetSrc: ${base}/targets.mind; autoStart: false; maxTrack: 2; ` +
+    `uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.0005; filterBeta: 0.005;`);
+  scene.setAttribute("color-space", "sRGB");
+  scene.setAttribute("vr-mode-ui", "enabled: false");
+  scene.setAttribute("device-orientation-permission-ui", "enabled: false");
+  scene.setAttribute("embedded", "");
+  scene.style.cssText = "position:fixed;inset:0;width:100%;height:100%;";
+
+  const cam = document.createElement("a-camera");
+  cam.setAttribute("position", "0 0 0");
+  cam.setAttribute("look-controls", "enabled: false");
+  scene.appendChild(cam);
+
+  for (let i = 0; i < N; i++) {
+    // elemen video (belum diberi src: dimuat saat target terdeteksi)
+    const v = document.createElement("video");
+    v.id = `v${i}`;
+    v.setAttribute("playsinline", "");
+    v.setAttribute("webkit-playsinline", "");
+    v.crossOrigin = "anonymous";
+    v.preload = "none";
+    v.loop = true;
+    v.dataset.retry = "0";
+    $("vids").appendChild(v);
+    videos.push(v);
+
+    // entity target + plane video
+    const ent = document.createElement("a-entity");
+    ent.setAttribute("mindar-image-target", `targetIndex: ${i}`);
+
+    const plane = document.createElement("a-entity");
+    plane.setAttribute("geometry", "primitive: plane; width: 1; height: 0.75");
+    plane.setAttribute("material", `shader: flat; src: #v${i}; transparent: true`);
+    plane.setAttribute("visible", "false");
+    ent.appendChild(plane);
+    planes.push(plane);
+
+    ent.addEventListener("targetFound", () => onFound(i));
+    ent.addEventListener("targetLost", () => onLost(i));
+    scene.appendChild(ent);
+
+    v.addEventListener("loadedmetadata", () => {
+      if (v.videoWidth) {
+        plane.setAttribute("geometry", "height", v.videoHeight / v.videoWidth);
+      }
+    });
+    v.addEventListener("playing", () => {
+      if (found.has(i)) { plane.setAttribute("visible", "true"); hintEl.style.display = "none"; }
+    });
+    v.addEventListener("waiting", () => {
+      if (found.has(i)) { hintEl.textContent = "Memuat video…"; hintEl.style.display = "block"; }
+    });
+    v.addEventListener("error", () => retryVideo(i));
+  }
+
+  document.body.appendChild(scene);
+
+  // ----- logika video -----
+  function videoUrl(i) { return `${base}/videos/${pad(i)}.mp4`; }
+
+  function loadVideo(i) {
+    const v = videos[i];
+    if (!v.getAttribute("src")) {
+      v.src = videoUrl(i);
+      v.load();
+    }
+    const idx = loadedOrder.indexOf(i);
+    if (idx !== -1) loadedOrder.splice(idx, 1);
+    loadedOrder.push(i);
+    // buang video lama yang tidak terlihat untuk menghemat memori
+    while (loadedOrder.length > MAX_LOADED_VIDEOS) {
+      const old = loadedOrder.find((k) => !found.has(k));
+      if (old === undefined) break;
+      loadedOrder.splice(loadedOrder.indexOf(old), 1);
+      const ov = videos[old];
+      ov.pause();
+      ov.removeAttribute("src");
+      ov.load();
+    }
+  }
+
+  function playVideo(i) {
+    const v = videos[i];
+    v.muted = muted;
+    const p = v.play();
+    if (p && p.catch) {
+      p.catch(() => {
+        // browser menolak suara: putar tanpa suara, user bisa ketuk tombol suara
+        v.muted = true;
+        muted = true;
+        updateSoundBtn();
+        v.play().catch(() => {});
+      });
+    }
+  }
+
+  function retryVideo(i) {
+    const v = videos[i];
+    const n = parseInt(v.dataset.retry, 10);
+    if (!v.getAttribute("src") || n >= MAX_RETRY) {
+      if (found.has(i)) { hintEl.textContent = "Video gagal dimuat. Periksa koneksi internet."; hintEl.style.display = "block"; }
+      return;
+    }
+    v.dataset.retry = String(n + 1);
+    setTimeout(() => {
+      v.src = videoUrl(i);
+      v.load();
+      if (found.has(i)) playVideo(i);
+    }, 1500 * (n + 1));
+  }
+
+  function onFound(i) {
+    found.add(i);
+    hintEl.style.display = "none";
+    videos[i].dataset.retry = "0";
+    loadVideo(i);
+    playVideo(i);
+  }
+
+  function onLost(i) {
+    found.delete(i);
+    planes[i].setAttribute("visible", "false");
+    videos[i].pause();
+    if (found.size === 0) {
+      hintEl.textContent = "Arahkan kamera ke salah satu foto di frame";
+      hintEl.style.display = "block";
+    }
+  }
+
+  // ----- suara -----
+  function updateSoundBtn() { soundBtn.textContent = muted ? "🔇" : "🔊"; }
+  soundBtn.addEventListener("click", () => {
+    muted = !muted;
+    updateSoundBtn();
+    found.forEach((i) => { videos[i].muted = muted; });
+  });
+
+  // ----- hemat baterai saat tab disembunyikan -----
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) videos.forEach((v) => v.pause());
+    else found.forEach((i) => playVideo(i));
+  });
+
+  // ----- start / error kamera -----
+  scene.addEventListener("arError", () => {
+    showError("Kamera atau file AR tidak bisa dibuka. Izinkan akses kamera dan pastikan internet aktif.");
+  });
+  scene.addEventListener("arReady", () => {
+    startEl.style.display = "none";
+    hintEl.textContent = "Arahkan kamera ke salah satu foto di frame";
+    hintEl.style.display = "block";
+    soundBtn.style.display = "block";
+  });
+
+  startBtn.addEventListener("click", async () => {
+    errEl.textContent = "";
+    startBtn.disabled = true;
+    startBtn.textContent = "Menyiapkan kamera…";
+    try {
+      if (!scene.hasLoaded) {
+        await new Promise((res) => scene.addEventListener("loaded", res, { once: true }));
+      }
+      await scene.systems["mindar-image-system"].start();
+    } catch (e) {
+      console.error(e);
+      showError("Gagal memulai AR. Izinkan akses kamera lalu coba lagi.");
+    }
+  });
+}
+</script>
+</body>
+</html>
