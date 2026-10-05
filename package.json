@@ -1,0 +1,14 @@
+{
+  "name": "hana-memoria-mind-compiler",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "compile": "node compile.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.600.0",
+    "canvas": "^2.11.2",
+    "mind-ar": "^1.2.5"
+  }
+}
