@@ -242,13 +242,33 @@ function init() {
     startBtn.disabled = true;
     startBtn.textContent = "Menyiapkan kamera…";
     try {
+      // 1) cek dulu file AR-nya supaya pesan error jelas
+      if (R2_BASE.includes("GANTI")) {
+        throw new Error("R2_BASE di index.html belum diisi dengan alamat bucket R2.");
+      }
+      let head;
+      try {
+        head = await fetch(`${base}/targets.mind`, { method: "HEAD", cache: "no-store" });
+      } catch (_) {
+        throw new Error("Tidak bisa mengambil file AR. Periksa alamat R2 dan pengaturan CORS bucket.");
+      }
+      if (head.status === 404) {
+        throw new Error("File AR untuk order ini belum siap. Tunggu kompilasi selesai, lalu coba lagi.");
+      }
+      if (!head.ok) throw new Error("File AR gagal dimuat (kode " + head.status + ").");
+
+      // 2) mulai kamera, dengan batas waktu supaya tidak menggantung selamanya
       if (!scene.hasLoaded) {
         await new Promise((res) => scene.addEventListener("loaded", res, { once: true }));
       }
-      await scene.systems["mindar-image-system"].start();
+      await Promise.race([
+        scene.systems["mindar-image-system"].start(),
+        new Promise((_, rej) => setTimeout(
+          () => rej(new Error("Terlalu lama menyiapkan kamera. Muat ulang halaman dan izinkan akses kamera.")), 25000)),
+      ]);
     } catch (e) {
       console.error(e);
-      showError("Gagal memulai AR. Izinkan akses kamera lalu coba lagi.");
+      showError(e.message || "Gagal memulai AR. Izinkan akses kamera lalu coba lagi.");
     }
   });
 }
