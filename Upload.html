@@ -64,6 +64,7 @@
     <button class="ghost" id="bulkVideo" type="button">Pilih banyak video</button>
   </div>
   <label class="chk"><input type="checkbox" id="sortName" checked> Urutkan menurut nama file saat pilih banyak</label>
+  <label class="chk"><input type="checkbox" id="useFiles" checked> Pilih lewat File Saya (bukan Galeri / Google Foto)</label>
   <p style="font-size:.8rem;color:var(--mute);margin:10px 0 0">Foto dan video dengan nomor yang sama akan menjadi pasangan. Kalau urutan salah, ganti per baris di bawah.</p>
 </div>
 
@@ -163,6 +164,8 @@ function mb(n) { return (n / 1048576).toFixed(1) + " MB"; }
 // Baca file langsung saat dipilih, selagi izin akses dari Android masih aktif.
 async function setFile(i, kind, file) {
   const s = slots[i];
+  const wantPrefix = kind === "photo" ? "image/" : "video/";
+  if (file.type && !file.type.startsWith(wantPrefix)) throw new Error("tipe file salah");
   if (kind === "photo") {
     const data = await file.arrayBuffer(); // melempar error kalau file tidak bisa dibaca
     const blob = new Blob([data], { type: file.type || "image/jpeg" });
@@ -171,14 +174,15 @@ async function setFile(i, kind, file) {
     s.photoData = blob;
     s.thumb = URL.createObjectURL(blob);
   } else {
-    await file.slice(0, 1024).arrayBuffer(); // tes baca; video besar dibaca per potongan saat upload
+    const data = await file.arrayBuffer(); // baca penuh sekarang, selagi izin masih aktif
     s.video = file;
+    s.videoData = new Blob([data], { type: file.type || "video/mp4" });
   }
 }
 
 function alertUnreadable(names) {
   alert(
-    "File ini tidak bisa dibaca oleh browser:\n" + names.join("\n") +
+    "File ini tidak bisa dipakai (tidak terbaca, atau bukan foto/video):\n" + names.join("\n") +
     "\n\nCoba pilih lewat aplikasi File Saya / Files (bukan Galeri), atau salin file ke folder Download dulu. " +
     "Pastikan juga Chrome punya izin Foto dan video."
   );
@@ -187,7 +191,7 @@ function alertUnreadable(names) {
 const picker = $("picker");
 function openPicker(accept, multiple, onFiles) {
   picker.value = "";
-  picker.accept = accept;
+  picker.accept = $("useFiles").checked ? "" : accept;
   picker.multiple = multiple;
   picker.onchange = () => { if (picker.files.length) onFiles(Array.from(picker.files)); };
   picker.click();
@@ -209,9 +213,12 @@ function pickBulk(kind) {
     }
     const list = files.slice(0, slots.length);
     const failed = [];
+    $("log").innerHTML = "";
     for (let i = 0; i < list.length; i++) {
+      log(`Membaca ${kind === "photo" ? "foto" : "video"} ${i + 1}/${list.length}…`);
       try { await setFile(i, kind, list[i]); } catch (_) { failed.push(list[i].name); }
     }
+    log("Selesai membaca file.", "ok");
     renderSlots();
     if (failed.length) alertUnreadable(failed);
   });
@@ -363,7 +370,7 @@ $("goBtn").addEventListener("click", async () => {
     const jobs = [];
     slots.forEach((s, i) => {
       jobs.push({ kind: "photos", name: pad(i) + ".jpg", file: s.photoData || s.photo, label: `Foto ${i + 1}` });
-      if (s.video) jobs.push({ kind: "videos", name: pad(i) + ".mp4", file: s.video, label: `Video ${i + 1}` });
+      if (s.video) jobs.push({ kind: "videos", name: pad(i) + ".mp4", file: s.videoData || s.video, label: `Video ${i + 1}` });
     });
 
     for (let j = 0; j < jobs.length; j++) {
