@@ -160,15 +160,28 @@ function renderSlots() {
 function esc(s) { return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function mb(n) { return (n / 1048576).toFixed(1) + " MB"; }
 
-function setFile(i, kind, file) {
+// Baca file langsung saat dipilih, selagi izin akses dari Android masih aktif.
+async function setFile(i, kind, file) {
   const s = slots[i];
   if (kind === "photo") {
+    const data = await file.arrayBuffer(); // melempar error kalau file tidak bisa dibaca
+    const blob = new Blob([data], { type: file.type || "image/jpeg" });
     if (s.thumb) URL.revokeObjectURL(s.thumb);
     s.photo = file;
-    s.thumb = URL.createObjectURL(file);
+    s.photoData = blob;
+    s.thumb = URL.createObjectURL(blob);
   } else {
+    await file.slice(0, 1024).arrayBuffer(); // tes baca; video besar dibaca per potongan saat upload
     s.video = file;
   }
+}
+
+function alertUnreadable(names) {
+  alert(
+    "File ini tidak bisa dibaca oleh browser:\n" + names.join("\n") +
+    "\n\nCoba pilih lewat aplikasi File Saya / Files (bukan Galeri), atau salin file ke folder Download dulu. " +
+    "Pastikan juga Chrome punya izin Foto dan video."
+  );
 }
 
 const picker = $("picker");
@@ -180,21 +193,27 @@ function openPicker(accept, multiple, onFiles) {
   picker.click();
 }
 function pickOne(kind, i) {
-  openPicker(kind === "photo" ? "image/*" : "video/*", false, (files) => {
-    setFile(i, kind, files[0]);
+  openPicker(kind === "photo" ? "image/*" : "video/*", false, async (files) => {
+    try { await setFile(i, kind, files[0]); }
+    catch (_) { alertUnreadable([files[0].name]); }
     renderSlots();
   });
 }
 function pickBulk(kind) {
-  openPicker(kind === "photo" ? "image/*" : "video/*", true, (files) => {
+  openPicker(kind === "photo" ? "image/*" : "video/*", true, async (files) => {
     if ($("sortName").checked) {
       files.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
     }
     if (files.length > slots.length) {
       alert(`Kamu memilih ${files.length} file, tetapi jumlah foto di frame hanya ${slots.length}. Kelebihannya diabaikan.`);
     }
-    files.slice(0, slots.length).forEach((f, i) => setFile(i, kind, f));
+    const list = files.slice(0, slots.length);
+    const failed = [];
+    for (let i = 0; i < list.length; i++) {
+      try { await setFile(i, kind, list[i]); } catch (_) { failed.push(list[i].name); }
+    }
     renderSlots();
+    if (failed.length) alertUnreadable(failed);
   });
 }
 $("bulkPhoto").addEventListener("click", () => pickBulk("photo"));
@@ -220,8 +239,12 @@ function uuid() {
 // Android kadang gagal membaca file langsung dari galeri saat dikirim.
 // Salin ke memori dulu supaya pengiriman stabil.
 async function toMemory(blob) {
-  const buf = await blob.arrayBuffer();
-  return new Blob([buf], { type: blob.type || "application/octet-stream" });
+  try {
+    const buf = await blob.arrayBuffer();
+    return new Blob([buf], { type: blob.type || "application/octet-stream" });
+  } catch (_) {
+    throw new Error("File tidak bisa dibaca browser. Pilih ulang file lewat aplikasi Files (bukan Galeri) atau salin ke folder Download dulu.");
+  }
 }
 
 // kirim satu potongan (atau file utuh) ke Cloudinary
@@ -339,7 +362,7 @@ $("goBtn").addEventListener("click", async () => {
   try {
     const jobs = [];
     slots.forEach((s, i) => {
-      jobs.push({ kind: "photos", name: pad(i) + ".jpg", file: s.photo, label: `Foto ${i + 1}` });
+      jobs.push({ kind: "photos", name: pad(i) + ".jpg", file: s.photoData || s.photo, label: `Foto ${i + 1}` });
       if (s.video) jobs.push({ kind: "videos", name: pad(i) + ".mp4", file: s.video, label: `Video ${i + 1}` });
     });
 
