@@ -42,7 +42,7 @@
 <script>
 // ====== KONFIGURASI ======
 // URL publik bucket R2 (r2.dev atau custom domain), tanpa garis miring di akhir.
-const R2_BASE = "https://pub-af8000a544674549b3e28589ff094f83.r2.dev";
+const R2_BASE = "https://GANTI-DENGAN-DOMAIN-R2";
 // Jumlah foto/target di frame. Bisa diubah lewat URL: ?order=ABC123&n=12
 const DEFAULT_TARGET_COUNT = 12;
 const MAX_LOADED_VIDEOS = 3;   // batasi video yang tersimpan di memori (HP low-end)
@@ -89,10 +89,12 @@ async function loadFirst(urls, check) {
 }
 async function loadLibs() {
   await loadFirst([
+    "aframe.min.js", // salinan di repo sendiri (utama)
     "https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js",
     "https://unpkg.com/aframe@1.5.0/dist/aframe.min.js",
   ], () => !!window.AFRAME);
   await loadFirst([
+    "mindar-image-aframe.prod.js", // salinan di repo sendiri (utama)
     "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js",
     "https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js",
   ], () => !!window.MINDAR);
