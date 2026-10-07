@@ -1,7 +1,7 @@
 // Compile foto dari R2 -> targets.mind -> upload balik ke R2
 // Struktur R2 (sesuaikan PHOTOS_PREFIX / OUTPUT_KEY kalau struktur kamu beda):
 //   orders/<ORDER_ID>/photos/01.jpg ... 12.jpg   (input)
-//   orders/<ORDER_ID>/targets.mind               (output)
+//   orders/<ORDER_ID>/mind/targets.mind          (output)
 //   orders/<ORDER_ID>/videos/01.mp4 ... 12.mp4   (tidak perlu dikompilasi)
 
 import {
@@ -32,7 +32,7 @@ for (const [k, v] of Object.entries({
 }
 
 const PHOTOS_PREFIX = `orders/${ORDER_ID}/photos/`;
-const OUTPUT_KEY = `orders/${ORDER_ID}/targets.mind`;
+const OUTPUT_KEY = `orders/${ORDER_ID}/mind/targets.mind`;
 
 const s3 = new S3Client({
   region: "auto",
