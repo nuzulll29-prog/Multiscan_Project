@@ -42,7 +42,7 @@
   <p id="err"></p>
   <button id="startBtn">Mulai Scan</button>
   <p id="step"></p>
-  <p style="font-size:.7rem;opacity:.4">v6</p>
+  <p style="font-size:.7rem;opacity:.4">v7</p>
 </div>
 
 <div id="hint">Arahkan kamera ke salah satu foto di frame</div>
@@ -62,7 +62,7 @@ const MAX_RETRY = 3;
 
 const params = new URLSearchParams(location.search);
 const ORDER = params.get("order");
-const N = parseInt(params.get("n") || DEFAULT_TARGET_COUNT, 10);
+let N = parseInt(params.get("n") || DEFAULT_TARGET_COUNT, 10);
 const pad = (i) => String(i + 1).padStart(2, "0");
 
 const $ = (id) => document.getElementById(id);
@@ -79,7 +79,7 @@ function dbg(msg) {
   dbgEl.scrollTop = dbgEl.scrollHeight;
 }
 window.addEventListener("error", (e) => dbg("ERR: " + e.message));
-dbg("index v6");
+dbg("index v7");
 
 function setStep(t) { stepEl.textContent = t || ""; }
 function showError(text) {
@@ -124,6 +124,17 @@ async function loadLibs() {
   ], () => !!window.MINDAR);
 }
 
+// Hitung jumlah foto dari video yang ada di R2 (01.mp4, 02.mp4, ...), berhenti di nomor pertama yang tidak ada.
+async function detectCount(base) {
+  const MAX = 24;
+  const checks = await Promise.all(Array.from({ length: MAX }, (_, i) =>
+    fetch(`${base}/videos/${pad(i)}.mp4`, { method: "HEAD", cache: "no-store" })
+      .then((r) => r.ok).catch(() => false)));
+  let n = 0;
+  while (n < MAX && checks[n]) n++;
+  return n;
+}
+
 async function bootstrap() {
   startBtn.disabled = true;
   startBtn.textContent = "Memuat…";
@@ -139,6 +150,12 @@ async function bootstrap() {
     startBtn.onclick = () => location.reload();
     setStep("");
     return;
+  }
+  if (!params.get("n") && !R2_BASE.includes("GANTI")) {
+    setStep("Mengecek jumlah foto…");
+    const detected = await detectCount(`${R2_BASE}/orders/${encodeURIComponent(ORDER)}`);
+    if (detected > 0) N = detected;
+    dbg("jumlah foto: " + N + (detected > 0 ? " (terdeteksi dari video)" : " (default)"));
   }
   setStep("");
   init();
@@ -368,11 +385,18 @@ function init() {
       dbg(`scene ${scene.clientWidth}x${scene.clientHeight} loaded=${scene.hasLoaded}`);
       const sys = scene.systems && scene.systems["mindar-image-system"];
       if (!sys) throw new Error("Modul MindAR tidak aktif. Muat ulang halaman.");
-      await Promise.race([
-        sys.start(),
-        new Promise((_, rej) => setTimeout(() => rej(new Error("Terlalu lama menyiapkan AR. Muat ulang halaman, lalu coba lagi.")), 30000)),
-      ]);
-      dbg("start() selesai");
+      const t0 = Date.now();
+      const ticker = setInterval(
+        () => setStep(`3/3 Menyalakan AR… ${Math.round((Date.now() - t0) / 1000)} dtk`), 1000);
+      try {
+        await Promise.race([
+          sys.start(),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("Terlalu lama menyiapkan AR. Tutup tab lain yang berat, muat ulang halaman, lalu coba lagi.")), 60000)),
+        ]);
+      } finally {
+        clearInterval(ticker);
+      }
+      dbg("start() selesai (" + Math.round((Date.now() - t0) / 1000) + " dtk)");
     } catch (e) {
       console.error(e);
       setStep("");
