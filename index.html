@@ -29,6 +29,7 @@
   #dbg { position: fixed; left: 0; top: 0; right: 0; max-height: 45vh; overflow: auto; margin: 0; padding: 6px 8px;
     font: 11px/1.35 monospace; background: rgba(0,0,0,.78); color: #9f9; z-index: 2000001;
     white-space: pre-wrap; display: none; pointer-events: none; }
+  .a-enter-vr, .a-enter-ar, .a-orientation-modal { display: none !important; }
   .vids { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; overflow: hidden; }
 </style>
 </head>
@@ -42,7 +43,7 @@
   <p id="err"></p>
   <button id="startBtn">Mulai Scan</button>
   <p id="step"></p>
-  <p style="font-size:.7rem;opacity:.4">v7</p>
+  <p style="font-size:.7rem;opacity:.4">v8</p>
 </div>
 
 <div id="hint">Arahkan kamera ke salah satu foto di frame</div>
@@ -79,7 +80,7 @@ function dbg(msg) {
   dbgEl.scrollTop = dbgEl.scrollHeight;
 }
 window.addEventListener("error", (e) => dbg("ERR: " + e.message));
-dbg("index v7");
+dbg("index v8");
 
 function setStep(t) { stepEl.textContent = t || ""; }
 function showError(text) {
@@ -199,7 +200,7 @@ function init() {
   const scene = document.createElement("a-scene");
   scene.setAttribute("mindar-image",
     `imageTargetSrc: ${base}/mind/targets.mind; autoStart: false; maxTrack: 2; ` +
-    `uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.0005; filterBeta: 0.005;`);
+    `uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.0005; filterBeta: 0.005; missTolerance: 10; warmupTolerance: 5;`);
   scene.setAttribute("color-space", "sRGB");
   scene.setAttribute("vr-mode-ui", "enabled: false");
   scene.setAttribute("device-orientation-permission-ui", "enabled: false");
