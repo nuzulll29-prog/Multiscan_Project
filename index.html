@@ -4,8 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Hana Memoria AR</title>
-<script src="https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
     font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: #fff; }
@@ -23,6 +21,7 @@
   #sound { position: fixed; top: calc(14px + env(safe-area-inset-top, 0px)); right: 14px; z-index: 5;
     width: 44px; height: 44px; padding: 0; font-size: 1.2rem; display: none; background: rgba(0,0,0,.55); color: #fff; }
   #err { color: #ffb4b4; }
+  #step { font-size: .85rem; opacity: .7; min-height: 1.2em; }
   .vids { position: fixed; left: -9999px; top: 0; width: 1px; height: 1px; overflow: hidden; }
 </style>
 </head>
@@ -33,6 +32,7 @@
   <p id="msg">Arahkan kamera ke foto di frame untuk melihat video kenanganmu.</p>
   <p id="err"></p>
   <button id="startBtn">Mulai Scan</button>
+  <p id="step"></p>
 </div>
 
 <div id="hint">Arahkan kamera ke salah satu foto di frame</div>
@@ -41,7 +41,7 @@
 
 <script>
 // ====== KONFIGURASI ======
-// URL publik bucket R2 (custom domain atau r2.dev), tanpa garis miring di akhir.
+// URL publik bucket R2 (r2.dev atau custom domain), tanpa garis miring di akhir.
 const R2_BASE = "https://pub-af8000a544674549b3e28589ff094f83.r2.dev";
 // Jumlah foto/target di frame. Bisa diubah lewat URL: ?order=ABC123&n=12
 const DEFAULT_TARGET_COUNT = 12;
@@ -56,8 +56,9 @@ const pad = (i) => String(i + 1).padStart(2, "0");
 
 const $ = (id) => document.getElementById(id);
 const startEl = $("start"), startBtn = $("startBtn"), errEl = $("err"),
-      msgEl = $("msg"), hintEl = $("hint"), soundBtn = $("sound");
+      stepEl = $("step"), hintEl = $("hint"), soundBtn = $("sound");
 
+function setStep(t) { stepEl.textContent = t || ""; }
 function showError(text) {
   errEl.textContent = text;
   startEl.style.display = "flex";
@@ -65,11 +66,80 @@ function showError(text) {
   startBtn.textContent = "Coba Lagi";
 }
 
+window.addEventListener("unhandledrejection", (e) => {
+  const m = e.reason && e.reason.message ? e.reason.message : String(e.reason);
+  setStep("Error: " + m);
+});
+
+// ---------- muat library AR (dengan cadangan kalau CDN utama gagal) ----------
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.onload = resolve;
+    s.onerror = () => reject(new Error("gagal memuat " + src));
+    document.head.appendChild(s);
+  });
+}
+async function loadFirst(urls, check) {
+  for (const u of urls) {
+    try { await loadScript(u); if (check()) return; } catch (e) { console.warn(e.message); }
+  }
+  throw new Error("Library AR gagal dimuat. Periksa internet, atau coba ganti WiFi / data seluler.");
+}
+async function loadLibs() {
+  await loadFirst([
+    "https://cdn.jsdelivr.net/npm/aframe@1.5.0/dist/aframe.min.js",
+    "https://unpkg.com/aframe@1.5.0/dist/aframe.min.js",
+  ], () => !!window.AFRAME);
+  await loadFirst([
+    "https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js",
+    "https://unpkg.com/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js",
+  ], () => !!window.MINDAR);
+}
+
+async function bootstrap() {
+  startBtn.disabled = true;
+  startBtn.textContent = "Memuat…";
+  setStep("Memuat library AR…");
+  try {
+    await loadLibs();
+  } catch (e) {
+    errEl.textContent = e.message;
+    startBtn.disabled = false;
+    startBtn.textContent = "Muat Ulang";
+    startBtn.onclick = () => location.reload();
+    setStep("");
+    return;
+  }
+  setStep("");
+  init();
+  startBtn.disabled = false;
+  startBtn.textContent = "Mulai Scan";
+}
+
 if (!ORDER) {
   errEl.textContent = "Link tidak valid. Scan ulang QR code pada produkmu.";
   startBtn.style.display = "none";
 } else {
-  init();
+  bootstrap();
+}
+
+async function testCamera() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error("Browser ini tidak mendukung kamera. Buka lewat Chrome dan pastikan alamatnya https.");
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+    stream.getTracks().forEach((t) => t.stop());
+  } catch (e) {
+    if (e.name === "NotAllowedError") {
+      throw new Error("Izin kamera ditolak. Ketuk ikon di sebelah alamat → Izin → Kamera → Izinkan, lalu muat ulang.");
+    }
+    if (e.name === "NotFoundError") throw new Error("Kamera tidak ditemukan di perangkat ini.");
+    if (e.name === "NotReadableError") throw new Error("Kamera sedang dipakai aplikasi atau tab lain. Tutup dulu, lalu coba lagi.");
+    throw new Error("Kamera gagal dibuka (" + e.name + ").");
+  }
 }
 
 function init() {
@@ -97,7 +167,6 @@ function init() {
   scene.appendChild(cam);
 
   for (let i = 0; i < N; i++) {
-    // elemen video (belum diberi src: dimuat saat target terdeteksi)
     const v = document.createElement("video");
     v.id = `v${i}`;
     v.setAttribute("playsinline", "");
@@ -109,7 +178,6 @@ function init() {
     $("vids").appendChild(v);
     videos.push(v);
 
-    // entity target + plane video
     const ent = document.createElement("a-entity");
     ent.setAttribute("mindar-image-target", `targetIndex: ${i}`);
 
@@ -125,9 +193,7 @@ function init() {
     scene.appendChild(ent);
 
     v.addEventListener("loadedmetadata", () => {
-      if (v.videoWidth) {
-        plane.setAttribute("geometry", "height", v.videoHeight / v.videoWidth);
-      }
+      if (v.videoWidth) plane.setAttribute("geometry", "height", v.videoHeight / v.videoWidth);
     });
     v.addEventListener("playing", () => {
       if (found.has(i)) { plane.setAttribute("visible", "true"); hintEl.style.display = "none"; }
@@ -145,22 +211,16 @@ function init() {
 
   function loadVideo(i) {
     const v = videos[i];
-    if (!v.getAttribute("src")) {
-      v.src = videoUrl(i);
-      v.load();
-    }
+    if (!v.getAttribute("src")) { v.src = videoUrl(i); v.load(); }
     const idx = loadedOrder.indexOf(i);
     if (idx !== -1) loadedOrder.splice(idx, 1);
     loadedOrder.push(i);
-    // buang video lama yang tidak terlihat untuk menghemat memori
     while (loadedOrder.length > MAX_LOADED_VIDEOS) {
       const old = loadedOrder.find((k) => !found.has(k));
       if (old === undefined) break;
       loadedOrder.splice(loadedOrder.indexOf(old), 1);
       const ov = videos[old];
-      ov.pause();
-      ov.removeAttribute("src");
-      ov.load();
+      ov.pause(); ov.removeAttribute("src"); ov.load();
     }
   }
 
@@ -170,10 +230,7 @@ function init() {
     const p = v.play();
     if (p && p.catch) {
       p.catch(() => {
-        // browser menolak suara: putar tanpa suara, user bisa ketuk tombol suara
-        v.muted = true;
-        muted = true;
-        updateSoundBtn();
+        v.muted = true; muted = true; updateSoundBtn();
         v.play().catch(() => {});
       });
     }
@@ -187,11 +244,7 @@ function init() {
       return;
     }
     v.dataset.retry = String(n + 1);
-    setTimeout(() => {
-      v.src = videoUrl(i);
-      v.load();
-      if (found.has(i)) playVideo(i);
-    }, 1500 * (n + 1));
+    setTimeout(() => { v.src = videoUrl(i); v.load(); if (found.has(i)) playVideo(i); }, 1500 * (n + 1));
   }
 
   function onFound(i) {
@@ -220,17 +273,17 @@ function init() {
     found.forEach((i) => { videos[i].muted = muted; });
   });
 
-  // ----- hemat baterai saat tab disembunyikan -----
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) videos.forEach((v) => v.pause());
     else found.forEach((i) => playVideo(i));
   });
 
-  // ----- start / error kamera -----
+  // ----- start / error -----
   scene.addEventListener("arError", () => {
     showError("Kamera atau file AR tidak bisa dibuka. Izinkan akses kamera dan pastikan internet aktif.");
   });
   scene.addEventListener("arReady", () => {
+    setStep("");
     startEl.style.display = "none";
     hintEl.textContent = "Arahkan kamera ke salah satu foto di frame";
     hintEl.style.display = "block";
@@ -242,32 +295,39 @@ function init() {
     startBtn.disabled = true;
     startBtn.textContent = "Menyiapkan kamera…";
     try {
-      // 1) cek dulu file AR-nya supaya pesan error jelas
       if (R2_BASE.includes("GANTI")) {
         throw new Error("R2_BASE di index.html belum diisi dengan alamat bucket R2.");
       }
+
+      setStep("1/3 Mengecek file AR…");
       let head;
       try {
         head = await fetch(`${base}/targets.mind`, { method: "HEAD", cache: "no-store" });
       } catch (_) {
         throw new Error("Tidak bisa mengambil file AR. Periksa alamat R2 dan pengaturan CORS bucket.");
       }
-      if (head.status === 404) {
-        throw new Error("File AR untuk order ini belum siap. Tunggu kompilasi selesai, lalu coba lagi.");
-      }
+      if (head.status === 404) throw new Error("File AR untuk order ini belum siap. Tunggu kompilasi selesai, lalu coba lagi.");
       if (!head.ok) throw new Error("File AR gagal dimuat (kode " + head.status + ").");
 
-      // 2) mulai kamera, dengan batas waktu supaya tidak menggantung selamanya
+      setStep("2/3 Izinkan kamera jika diminta…");
+      await testCamera();
+
+      setStep("3/3 Menyalakan AR…");
       if (!scene.hasLoaded) {
-        await new Promise((res) => scene.addEventListener("loaded", res, { once: true }));
+        await Promise.race([
+          new Promise((res) => scene.addEventListener("loaded", res, { once: true })),
+          new Promise((_, rej) => setTimeout(() => rej(new Error("A-Frame tidak siap. Muat ulang halaman.")), 15000)),
+        ]);
       }
+      const sys = scene.systems && scene.systems["mindar-image-system"];
+      if (!sys) throw new Error("Modul MindAR tidak aktif. Muat ulang halaman.");
       await Promise.race([
-        scene.systems["mindar-image-system"].start(),
-        new Promise((_, rej) => setTimeout(
-          () => rej(new Error("Terlalu lama menyiapkan kamera. Muat ulang halaman dan izinkan akses kamera.")), 25000)),
+        sys.start(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("Terlalu lama menyiapkan AR. Muat ulang halaman, lalu coba lagi.")), 30000)),
       ]);
     } catch (e) {
       console.error(e);
+      setStep("");
       showError(e.message || "Gagal memulai AR. Izinkan akses kamera lalu coba lagi.");
     }
   });
