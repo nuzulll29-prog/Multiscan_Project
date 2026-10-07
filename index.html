@@ -181,7 +181,7 @@ function init() {
   // ----- scene -----
   const scene = document.createElement("a-scene");
   scene.setAttribute("mindar-image",
-    `imageTargetSrc: ${base}/targets.mind; autoStart: false; maxTrack: 2; ` +
+    `imageTargetSrc: ${base}/mind/targets.mind; autoStart: false; maxTrack: 2; ` +
     `uiLoading: no; uiScanning: no; uiError: no; filterMinCF: 0.0005; filterBeta: 0.005;`);
   scene.setAttribute("color-space", "sRGB");
   scene.setAttribute("vr-mode-ui", "enabled: false");
@@ -346,7 +346,7 @@ function init() {
       setStep("1/3 Mengecek file AR…");
       let head;
       try {
-        head = await fetch(`${base}/targets.mind`, { method: "HEAD", cache: "no-store" });
+        head = await fetch(`${base}/mind/targets.mind`, { method: "HEAD", cache: "no-store" });
       } catch (_) {
         throw new Error("Tidak bisa mengambil file AR. Periksa alamat R2 dan pengaturan CORS bucket.");
       }
