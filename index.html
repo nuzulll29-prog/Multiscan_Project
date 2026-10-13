@@ -43,7 +43,7 @@
   <p id="err"></p>
   <button id="startBtn">Mulai Scan</button>
   <p id="step"></p>
-  <p style="font-size:.7rem;opacity:.4">v8</p>
+  <p style="font-size:.7rem;opacity:.4">v10</p>
 </div>
 
 <div id="hint">Arahkan kamera ke salah satu foto di frame</div>
@@ -80,7 +80,7 @@ function dbg(msg) {
   dbgEl.scrollTop = dbgEl.scrollHeight;
 }
 window.addEventListener("error", (e) => dbg("ERR: " + e.message));
-dbg("index v8");
+dbg("index v10");
 
 function setStep(t) { stepEl.textContent = t || ""; }
 function showError(text) {
@@ -194,6 +194,8 @@ function init() {
   const planes = [];        // plane A-Frame per target
   const found = new Set();  // target yang sedang terlihat
   const loadedOrder = [];   // urutan video yang sudah dimuat (LRU)
+  const ents = [];          // entity target per index
+  let active = -1;          // satu-satunya target yang videonya ditampilkan
   let muted = false;
 
   // ----- scene -----
@@ -237,20 +239,38 @@ function init() {
     ent.addEventListener("targetFound", () => onFound(i));
     ent.addEventListener("targetLost", () => onLost(i));
     scene.appendChild(ent);
+    ents.push(ent);
 
-    v.addEventListener("loadedmetadata", () => {
-      if (v.videoWidth) plane.setAttribute("geometry", "height", v.videoHeight / v.videoWidth);
-    });
+    v.addEventListener("loadedmetadata", () => fitPlane(i));
     v.addEventListener("playing", () => {
-      if (found.has(i)) { plane.setAttribute("visible", "true"); hintEl.style.display = "none"; }
+      if (active === i) { plane.setAttribute("visible", "true"); hintEl.style.display = "none"; }
     });
     v.addEventListener("waiting", () => {
-      if (found.has(i)) { hintEl.textContent = "Memuat video…"; hintEl.style.display = "block"; }
+      if (active === i) { hintEl.textContent = "Memuat video…"; hintEl.style.display = "block"; }
     });
     v.addEventListener("error", () => retryVideo(i));
   }
 
   $("arbox").appendChild(scene);
+
+  // Samakan ukuran video dengan ukuran foto: bidang video dibuat persis seukuran foto,
+  // video diisi penuh dan kelebihannya dipotong rata (kiri-kanan atau atas-bawah).
+  function fitPlane(i) {
+    const v = videos[i];
+    if (!v.videoWidth) return;
+    const comp = ents[i].components["mindar-image-target"];
+    const pm = comp && comp.postMatrix;
+    let pa = pm ? pm.elements[13] / pm.elements[12] : NaN; // tinggi / lebar foto
+    const va = v.videoHeight / v.videoWidth;               // tinggi / lebar video
+    if (!isFinite(pa) || pa <= 0) pa = va;                 // cadangan: ikuti rasio video
+    let rx = 1, ry = 1;
+    if (va > pa) ry = pa / va; else rx = va / pa;
+    const plane = planes[i];
+    plane.setAttribute("geometry", "height", pa);
+    plane.setAttribute("material", "repeat", `${rx} ${ry}`);
+    plane.setAttribute("material", "offset", `${(1 - rx) / 2} ${(1 - ry) / 2}`);
+    dbg(`target ${i}: rasio foto ${pa.toFixed(2)}, video ${va.toFixed(2)} (diisi penuh)`);
+  }
 
   // ----- logika video -----
   function videoUrl(i) { return `${base}/videos/${pad(i)}.mp4`; }
@@ -286,27 +306,60 @@ function init() {
     const v = videos[i];
     const n = parseInt(v.dataset.retry, 10);
     if (!v.getAttribute("src") || n >= MAX_RETRY) {
-      if (found.has(i)) { hintEl.textContent = "Video gagal dimuat. Periksa koneksi internet."; hintEl.style.display = "block"; }
+      if (active === i) { hintEl.textContent = "Video gagal dimuat. Periksa koneksi internet."; hintEl.style.display = "block"; }
       return;
     }
     v.dataset.retry = String(n + 1);
-    setTimeout(() => { v.src = videoUrl(i); v.load(); if (found.has(i)) playVideo(i); }, 1500 * (n + 1));
+    setTimeout(() => { v.src = videoUrl(i); v.load(); if (active === i) playVideo(i); }, 1500 * (n + 1));
   }
 
-  function onFound(i) {
-    dbg("target " + i + " terlihat");
-    found.add(i);
+  // Kalau beberapa foto terlihat sekaligus (misalnya foto di sebelahnya ikut masuk kamera),
+  // hanya foto yang paling dekat ke tengah layar yang videonya diputar.
+  const vec = new AFRAME.THREE.Vector3();
+  function score(i) {
+    const cam = scene.camera;
+    if (!cam) return 0;
+    vec.setFromMatrixPosition(ents[i].object3D.matrix);
+    vec.project(cam);
+    return Math.hypot(vec.x, vec.y); // makin kecil = makin ke tengah layar
+  }
+
+  function activate(i) {
+    if (active === i) return;
+    if (active !== -1) {
+      planes[active].setAttribute("visible", "false");
+      videos[active].pause();
+    }
+    active = i;
+    if (i === -1) return;
+    dbg("target aktif: " + i);
     hintEl.style.display = "none";
     videos[i].dataset.retry = "0";
     loadVideo(i);
     playVideo(i);
   }
 
+  function refreshActive() {
+    if (found.size === 0) { activate(-1); return; }
+    let best = -1, bestScore = Infinity;
+    found.forEach((i) => { const sc = score(i); if (sc < bestScore) { bestScore = sc; best = i; } });
+    // pindah hanya kalau kandidat baru jelas lebih ke tengah, supaya tidak bolak-balik
+    if (active !== -1 && found.has(active) && score(active) <= bestScore + 0.2) return;
+    activate(best);
+  }
+  setInterval(refreshActive, 250);
+
+  function onFound(i) {
+    dbg("target " + i + " terlihat");
+    found.add(i);
+    refreshActive();
+  }
+
   function onLost(i) {
     dbg("target " + i + " hilang");
     found.delete(i);
-    planes[i].setAttribute("visible", "false");
-    videos[i].pause();
+    if (active === i) activate(-1);
+    refreshActive();
     if (found.size === 0) {
       hintEl.textContent = "Arahkan kamera ke salah satu foto di frame";
       hintEl.style.display = "block";
@@ -318,12 +371,12 @@ function init() {
   soundBtn.addEventListener("click", () => {
     muted = !muted;
     updateSoundBtn();
-    found.forEach((i) => { videos[i].muted = muted; });
+    if (active !== -1) videos[active].muted = muted;
   });
 
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) videos.forEach((v) => v.pause());
-    else found.forEach((i) => playVideo(i));
+    else if (active !== -1) playVideo(active);
   });
 
   function snapshot() {
@@ -369,7 +422,7 @@ function init() {
         throw new Error("Tidak bisa mengambil file AR. Periksa alamat R2 dan pengaturan CORS bucket.");
       }
       dbg("HEAD targets.mind -> " + head.status);
-      if (head.status === 404) throw new Error("File AR untuk order ini belum siap. Tunggu kompilasi selesai, lalu coba lagi.");
+      if (head.status === 404) throw new Error("Foto kenanganmu sedang disiapkan. Silakan coba lagi dalam beberapa menit.");
       if (!head.ok) throw new Error("File AR gagal dimuat (kode " + head.status + ").");
 
       setStep("2/3 Izinkan kamera jika diminta…");
