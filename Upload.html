@@ -73,12 +73,13 @@
 <div class="card">
   <button id="goBtn" style="width:100%">Upload &amp; Proses</button>
   <button id="recompileBtn" class="ghost" style="width:100%;margin-top:8px">Proses ulang saja (tanpa upload)</button>
+  <button id="statusBtn" class="ghost" style="width:100%;margin-top:8px">Cek status order</button>
   <div class="bar"><i id="barFill"></i></div>
   <div id="log"></div>
 </div>
 
 <div class="card" id="result">
-  <div style="font-weight:700;color:var(--ok)">Siap dipakai!</div>
+  <div id="resultTitle" style="font-weight:700;color:var(--ok)">Siap dipakai!</div>
   <div id="qr"></div>
   <div class="link" id="linkText"></div>
   <div class="row">
@@ -91,14 +92,15 @@
 
 <script>
 // ====== KONFIGURASI (wajib diisi) ======
-const WORKER_URL = "https://hana-multiscan.nuzulll-29.workers.dev"; // tanpa / di akhir
-const SCAN_URL   = "https://nuzulll29-prog.github.io/Multiscan_Project/index.html"; // halaman scan pembeli
+const WORKER_URL = "https://GANTI-DENGAN-URL-WORKER.workers.dev"; // tanpa / di akhir
+const SCAN_URL   = "https://USERNAMEMU.github.io/NAMA-REPO/index.html"; // halaman scan pembeli
 // =======================================
 
+const UPLOAD_CONCURRENCY = 3;  // jumlah file yang diunggah bersamaan
 const CHUNK_MB = 6;            // video dipotong per sekian MB (minimal 5 MB, aturan Cloudinary)
 const MAX_PHOTO_MB = 10;       // batas file foto di akun gratis Cloudinary
 const MAX_VIDEO_MB = 100;      // batas file video di akun gratis Cloudinary
-const POLL_MS = 10000;
+const POLL_MS = 5000;
 const POLL_MAX_MIN = 30;
 
 const $ = (id) => document.getElementById(id);
@@ -334,7 +336,7 @@ async function ingest(order, kind, name) {
         body: JSON.stringify({ order, kind, name }),
       }), 2);
     if (r.status === "done") return r;
-    await new Promise((res) => setTimeout(res, 4000));
+    await new Promise((res) => setTimeout(res, 2000));
   }
   throw new Error(`Cloudinary belum selesai memproses ${name}. Coba lagi.`);
 }
@@ -361,6 +363,7 @@ $("goBtn").addEventListener("click", async () => {
   const missingVideo = slots.filter((s) => !s.video).length;
   if (missingVideo && !confirm(`${missingVideo} video belum dipilih. Lanjut tanpa video itu?`)) return;
 
+  pollToken++;
   $("result").style.display = "none";
   $("log").innerHTML = "";
   setBar(0);
@@ -368,33 +371,65 @@ $("goBtn").addEventListener("click", async () => {
 
   try {
     const jobs = [];
+    // Foto diunggah lebih dulu: kompilasi hanya butuh foto, jadi bisa mulai selagi video masih diunggah
     slots.forEach((s, i) => {
       jobs.push({ kind: "photos", name: pad(i) + ".jpg", file: s.photoData || s.photo, label: `Foto ${i + 1}` });
+    });
+    slots.forEach((s, i) => {
       if (s.video) jobs.push({ kind: "videos", name: pad(i) + ".mp4", file: s.videoData || s.video, label: `Video ${i + 1}` });
     });
+    const photoTotal = slots.length;
 
-    for (let j = 0; j < jobs.length; j++) {
-      const job = jobs[j];
+    // cek ukuran dulu supaya tidak gagal di tengah jalan
+    jobs.forEach((job) => {
       const limitMb = job.kind === "photos" ? MAX_PHOTO_MB : MAX_VIDEO_MB;
       if (job.file.size > limitMb * 1048576) {
         throw new Error(`${job.label} terlalu besar (${mb(job.file.size)}, maks ${limitMb} MB).`);
       }
-      const part = (f) => setBar(((j + f) / jobs.length) * 0.7);
+    });
 
+    const total = jobs.length;
+    const prog = new Array(total).fill(0);
+    const updateBar = () => setBar(prog.reduce((a, b) => a + b, 0) / total);
+    let next = 0;
+    let aborted = false;
+    let photosDone = 0;
+    let compileP = null;
+
+    async function runJob(j) {
+      const job = jobs[j];
       log(`Mengunggah ${job.label} (${mb(job.file.size)})…`);
-      await uploadToCloudinary(order, job.kind, job.name, job.file, (f) => part(f * 0.7));
-
+      await uploadToCloudinary(order, job.kind, job.name, job.file, (f) => { prog[j] = f * 0.7; updateBar(); });
       log(`${job.label}: dikompres, memindahkan ke R2…`);
       const r = await ingest(order, job.kind, job.name);
-      part(1);
+      prog[j] = 1;
+      updateBar();
       log(
         `${job.label}: ${mb(job.file.size)} → ${mb(r.size)}` +
           (r.cleaned ? "" : " (file sementara di Cloudinary gagal dihapus)"),
         r.cleaned ? "ok" : "bad"
       );
+      // semua foto sudah di R2 -> mulai kompilasi di belakang layar, video tetap lanjut diunggah
+      if (job.kind === "photos" && ++photosDone === photoTotal) {
+        log("Semua foto sudah di R2. Kompilasi dimulai di belakang layar…");
+        compileP = dispatchCompile(order);
+        compileP.catch(() => {}); // error ditangani setelah semua unggahan selesai
+      }
     }
-    log("Semua file sudah di R2.", "ok");
-    await startCompileAndWait(order);
+
+    async function worker() {
+      while (!aborted && next < total) {
+        const j = next++;
+        try { await runJob(j); }
+        catch (e) { aborted = true; throw e; }
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, total) }, worker));
+    if (compileP) await compileP;
+    setBar(1);
+    log("Semua file sudah di R2. Kompilasi berjalan di GitHub, halaman ini boleh ditutup.", "ok");
+    showResult(order, false);
+    pollUntilReady(order);
   } catch (e) {
     log(e.message, "bad");
   } finally {
@@ -405,57 +440,82 @@ $("goBtn").addEventListener("click", async () => {
 $("recompileBtn").addEventListener("click", async () => {
   const order = validOrder();
   if (!order) return;
+  pollToken++;
   $("result").style.display = "none";
   $("log").innerHTML = "";
-  setBar(0.7);
+  setBar(0);
   setBusy(true);
-  try { await startCompileAndWait(order); }
-  catch (e) { log(e.message, "bad"); }
+  try {
+    log("Memulai kompilasi di GitHub…");
+    await dispatchCompile(order);
+    setBar(1);
+    log("Kompilasi berjalan di belakang layar, halaman ini boleh ditutup.", "ok");
+    showResult(order, false);
+    pollUntilReady(order);
+  } catch (e) { log(e.message, "bad"); }
   finally { setBusy(false); }
 });
 
-async function startCompileAndWait(order) {
-  log("Memulai kompilasi di GitHub…");
-  await api("/compile", {
+$("statusBtn").addEventListener("click", async () => {
+  const order = validOrder();
+  if (!order) return;
+  try {
+    const st = await api("/status?order=" + encodeURIComponent(order));
+    showResult(order, st.ready, st);
+    if (!st.ready) pollUntilReady(order);
+  } catch (e) { alert(e.message); }
+});
+
+function dispatchCompile(order) {
+  return api("/compile", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ order }),
   });
-  log("Kompilasi berjalan. Tunggu 5-15 menit, halaman ini jangan ditutup.");
-
-  const start = Date.now();
-  let dots = 0;
-  while (Date.now() - start < POLL_MAX_MIN * 60000) {
-    await new Promise((r) => setTimeout(r, POLL_MS));
-    let st;
-    try { st = await api("/status?order=" + encodeURIComponent(order)); }
-    catch (e) { continue; } // jaringan sempat putus, coba lagi
-    const mins = Math.floor((Date.now() - start) / 60000);
-    setBar(0.7 + Math.min(0.29, (Date.now() - start) / (POLL_MAX_MIN * 60000) * 0.29));
-    if (st.ready) {
-      setBar(1);
-      log(`Selesai! (${st.photos} foto, ${st.videos} video, file AR ${(st.mindSize / 1024).toFixed(0)} KB)`, "ok");
-      showResult(order);
-      return;
-    }
-    if (++dots % 3 === 0) log(`Masih diproses… (${mins} menit)`);
-  }
-  log("Kompilasi belum selesai setelah 30 menit. Cek tab Actions di GitHub untuk melihat error-nya.", "bad");
 }
 
-function showResult(order) {
-  let link = `${SCAN_URL}?order=${encodeURIComponent(order)}`;
-  if (count() !== 12) link += `&n=${count()}`;
+// Pengecekan di latar: tidak menahan tombol upload, dan dibatalkan kalau order baru dimulai
+let pollToken = 0;
+async function pollUntilReady(order) {
+  const token = ++pollToken;
+  const start = Date.now();
+  while (token === pollToken && Date.now() - start < POLL_MAX_MIN * 60000) {
+    await new Promise((r) => setTimeout(r, POLL_MS));
+    if (token !== pollToken) return;
+    let st;
+    try { st = await api("/status?order=" + encodeURIComponent(order)); }
+    catch (_) { continue; } // jaringan sempat putus, coba lagi
+    if (st.ready) {
+      log(`Kompilasi selesai! (${st.photos} foto, ${st.videos} video, file AR ${(st.mindSize / 1024).toFixed(0)} KB)`, "ok");
+      showResult(order, true, st);
+      return;
+    }
+  }
+  if (token === pollToken) log("Kompilasi belum selesai setelah 30 menit. Cek tab Actions di GitHub untuk melihat error-nya.", "bad");
+}
+
+function showResult(order, ready) {
+  const link = `${SCAN_URL}?order=${encodeURIComponent(order)}`;
+  const wasHidden = $("result").style.display !== "block";
+  const title = $("resultTitle");
+  if (ready) {
+    title.textContent = "Siap dipakai!";
+    title.style.color = "var(--ok)";
+  } else {
+    title.textContent = "Link sudah dibuat. Kompilasi masih berjalan di belakang layar (sekitar 3-5 menit); link baru bisa dipakai setelah selesai.";
+    title.style.color = "var(--mute)";
+  }
   $("linkText").textContent = link;
   $("qr").innerHTML = "";
   new QRCode($("qr"), { text: link, width: 220, height: 220 });
   $("result").style.display = "block";
+  $("copyBtn").textContent = "Salin link";
   $("copyBtn").onclick = async () => {
     try { await navigator.clipboard.writeText(link); $("copyBtn").textContent = "Tersalin ✓"; }
     catch (_) { prompt("Salin link ini:", link); }
   };
   $("openBtn").onclick = () => window.open(link, "_blank");
-  $("result").scrollIntoView({ behavior: "smooth" });
+  if (wasHidden || ready) $("result").scrollIntoView({ behavior: "smooth" });
 }
 
 resizeSlots();
