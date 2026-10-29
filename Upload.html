@@ -22,13 +22,7 @@
   button.ghost { background:#f3e9ee; color:var(--ink); }
   button.small { padding:8px 10px; font-size:.8rem; }
   button:disabled { opacity:.5; }
-  .slot { display:flex; gap:10px; align-items:center; padding:8px 0; border-top:1px solid var(--line); }
-  .slot:first-of-type { border-top:0; }
   .num { width:24px; text-align:center; font-weight:700; color:var(--mute); }
-  .thumb { width:52px; height:52px; border-radius:8px; background:#f3e9ee; object-fit:cover; flex:none; }
-  .meta { flex:1; min-width:0; font-size:.8rem; color:var(--mute); }
-  .meta b { display:block; color:var(--ink); font-size:.82rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .btns { display:flex; flex-direction:column; gap:4px; }
   .bar { height:8px; background:#f0e6eb; border-radius:99px; overflow:hidden; margin:10px 0; }
   .bar > i { display:block; height:100%; width:0; background:var(--pink); transition:width .2s; }
   #log { font-size:.82rem; line-height:1.6; max-height:200px; overflow:auto; }
@@ -38,6 +32,32 @@
   .link { word-break:break-all; font-size:.85rem; background:#f7f0f4; padding:10px; border-radius:10px; margin:8px 0; }
   .chk { display:flex; align-items:center; gap:8px; font-size:.85rem; color:var(--mute); margin-top:10px; }
   .chk input { width:18px; height:18px; }
+  .tabs { display:flex; gap:6px; background:#f3e9ee; padding:4px; border-radius:12px; margin-bottom:12px; }
+  .tab { flex:1; background:transparent; color:var(--mute); padding:10px 6px; font-size:.82rem; }
+  .tab.on { background:#fff; color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.1); }
+  .hintp { font-size:.8rem; color:var(--mute); margin:10px 0 0; line-height:1.5; }
+  .slot { border:1px solid var(--line); border-radius:12px; padding:10px; margin-bottom:10px; }
+  .slot:last-child { margin-bottom:0; }
+  .slot-head { display:flex; align-items:center; gap:8px; margin-bottom:8px; font-weight:700; font-size:.9rem; }
+  .slot-head .spacer { flex:1; }
+  .slot-head .num { background:var(--pink); color:#fff; border-radius:99px; width:26px; height:26px; line-height:26px; font-size:.8rem; }
+  .pairBtn { display:none; }
+  .mode-pair .pairBtn { display:inline-block; }
+  .pair { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  .pane { min-width:0; }
+  .pv { position:relative; width:100%; aspect-ratio:3/4; border-radius:10px; background:#f3e9ee; overflow:hidden;
+    display:flex; align-items:center; justify-content:center; color:var(--mute); font-size:.8rem; text-align:center; cursor:pointer; }
+  .pv img, .pv video { width:100%; height:100%; object-fit:cover; pointer-events:none; }
+  .pv .tag { position:absolute; left:6px; top:6px; background:rgba(0,0,0,.55); color:#fff; font-size:.7rem; padding:2px 8px; border-radius:99px; }
+  .pv .play { position:absolute; right:6px; bottom:6px; background:rgba(0,0,0,.55); color:#fff; font-size:.8rem; padding:3px 9px; border-radius:99px; }
+  .fn { font-size:.75rem; color:var(--mute); margin:6px 0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .pbtns { display:flex; gap:4px; }
+  .pbtns button { padding:9px 0; font-size:.8rem; flex:1; }
+  .pbtns button.pick { flex:2; }
+  #lightbox { position:fixed; inset:0; z-index:100; background:rgba(0,0,0,.92); display:none; flex-direction:column; align-items:center; justify-content:center; padding:16px; }
+  #lightbox img, #lightbox video { max-width:100%; max-height:78vh; border-radius:8px; }
+  #lightbox .lbx { position:absolute; top:calc(12px + env(safe-area-inset-top,0px)); right:14px; background:rgba(255,255,255,.2); color:#fff; }
+  #lightbox .cap { color:#ddd; font-size:.85rem; margin-top:10px; text-align:center; word-break:break-all; }
 </style>
 </head>
 <body>
@@ -58,14 +78,21 @@
   <input type="number" id="count" min="1" max="24" value="12" inputmode="numeric">
 </div>
 
-<div class="card">
-  <div class="row">
-    <button class="ghost" id="bulkPhoto" type="button">Pilih banyak foto</button>
-    <button class="ghost" id="bulkVideo" type="button">Pilih banyak video</button>
+<div class="card" id="pickCard">
+  <div class="tabs">
+    <button class="tab on" id="modeBulk" type="button">Pilih banyak sekaligus</button>
+    <button class="tab" id="modePair" type="button">Satu per satu (pasangan)</button>
   </div>
-  <label class="chk"><input type="checkbox" id="sortName" checked> Urutkan menurut nama file saat pilih banyak</label>
+  <div id="bulkBox">
+    <div class="row">
+      <button class="ghost" id="bulkPhoto" type="button">Pilih banyak foto</button>
+      <button class="ghost" id="bulkVideo" type="button">Pilih banyak video</button>
+    </div>
+    <label class="chk"><input type="checkbox" id="sortName" checked> Urutkan menurut nama file saat pilih banyak</label>
+    <p class="hintp">Foto dan video dipasangkan menurut urutan. Periksa pasangannya di bawah (tap gambar untuk memperbesar), dan perbaiki dengan tombol ▲ ▼ kalau ada yang tertukar.</p>
+  </div>
+  <p class="hintp" id="pairHint" style="display:none">Di tiap pasangan, tap <b>Pilih pasangan</b>, lalu pilih <b>1 foto dan 1 video sekaligus</b>. Keduanya langsung masuk ke baris yang sama, jadi tidak bisa tertukar.</p>
   <label class="chk"><input type="checkbox" id="useFiles" checked> Pilih lewat File Saya (bukan Galeri / Google Foto)</label>
-  <p style="font-size:.8rem;color:var(--mute);margin:10px 0 0">Foto dan video dengan nomor yang sama akan menjadi pasangan. Kalau urutan salah, ganti per baris di bawah.</p>
 </div>
 
 <div class="card" id="slots"></div>
@@ -88,12 +115,18 @@
   </div>
 </div>
 
+<div id="lightbox">
+  <button class="lbx" id="lbClose" type="button">Tutup ✕</button>
+  <div id="lbBody"></div>
+  <div class="cap" id="lbCap"></div>
+</div>
+
 <input type="file" id="picker" hidden>
 
 <script>
 // ====== KONFIGURASI (wajib diisi) ======
-const WORKER_URL = "https://hana-multiscan.nuzulll-29.workers.dev"; // tanpa / di akhir
-const SCAN_URL   = "https://nuzulll29-prog.github.io/Multiscan_Project/index.html"; // halaman scan pembeli
+const WORKER_URL = "https://GANTI-DENGAN-URL-WORKER.workers.dev"; // tanpa / di akhir
+const SCAN_URL   = "https://USERNAMEMU.github.io/NAMA-REPO/index.html"; // halaman scan pembeli
 // =======================================
 
 const UPLOAD_CONCURRENCY = 3;  // jumlah file yang diunggah bersamaan
@@ -123,7 +156,7 @@ function count() {
 }
 function resizeSlots() {
   const n = count();
-  while (slots.length < n) slots.push({ photo: null, video: null, thumb: null });
+  while (slots.length < n) slots.push(emptySlot());
   slots.length = n;
 }
 
@@ -141,46 +174,161 @@ function setBusy(b) {
 }
 
 // ---------- slot ----------
-function renderSlots() {
-  const box = $("slots");
-  box.innerHTML = "";
-  slots.forEach((s, i) => {
-    const row = document.createElement("div");
-    row.className = "slot";
-    row.innerHTML =
-      `<div class="num">${i + 1}</div>` +
-      (s.thumb ? `<img class="thumb" src="${s.thumb}" alt="">` : `<div class="thumb"></div>`) +
-      `<div class="meta"><b>${s.photo ? esc(s.photo.name) : "Foto belum dipilih"}</b>` +
-      `<b>${s.video ? esc(s.video.name) + " (" + mb(s.video.size) + ")" : "Video belum dipilih"}</b></div>` +
-      `<div class="btns"><button class="ghost small" data-k="photo" data-i="${i}" type="button">Foto</button>` +
-      `<button class="ghost small" data-k="video" data-i="${i}" type="button">Video</button></div>`;
-    box.appendChild(row);
-  });
-  box.querySelectorAll("button").forEach((b) =>
-    b.addEventListener("click", () => pickOne(b.dataset.k, parseInt(b.dataset.i, 10)))
-  );
-}
 function esc(s) { return s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
 function mb(n) { return (n / 1048576).toFixed(1) + " MB"; }
+
+function emptySlot() {
+  return { photo: null, photoData: null, thumb: null, video: null, videoData: null, vurl: null };
+}
+
+function kindOf(file) {
+  const t = file.type || "";
+  if (t.startsWith("image/")) return "photo";
+  if (t.startsWith("video/")) return "video";
+  if (/\.(jpe?g|png|webp|heic|heif)$/i.test(file.name)) return "photo";
+  if (/\.(mp4|mov|m4v|webm|3gp)$/i.test(file.name)) return "video";
+  return null;
+}
 
 // Baca file langsung saat dipilih, selagi izin akses dari Android masih aktif.
 async function setFile(i, kind, file) {
   const s = slots[i];
-  const wantPrefix = kind === "photo" ? "image/" : "video/";
-  if (file.type && !file.type.startsWith(wantPrefix)) throw new Error("tipe file salah");
+  const k = kindOf(file);
+  if (k && k !== kind) throw new Error("tipe file salah");
+  const data = await file.arrayBuffer(); // melempar error kalau file tidak bisa dibaca
   if (kind === "photo") {
-    const data = await file.arrayBuffer(); // melempar error kalau file tidak bisa dibaca
     const blob = new Blob([data], { type: file.type || "image/jpeg" });
     if (s.thumb) URL.revokeObjectURL(s.thumb);
     s.photo = file;
     s.photoData = blob;
     s.thumb = URL.createObjectURL(blob);
   } else {
-    const data = await file.arrayBuffer(); // baca penuh sekarang, selagi izin masih aktif
+    const blob = new Blob([data], { type: file.type || "video/mp4" });
+    if (s.vurl) URL.revokeObjectURL(s.vurl);
     s.video = file;
-    s.videoData = new Blob([data], { type: file.type || "video/mp4" });
+    s.videoData = blob;
+    s.vurl = URL.createObjectURL(blob);
   }
 }
+
+function clearFile(i, kind) {
+  const s = slots[i];
+  if (kind === "photo") {
+    if (s.thumb) URL.revokeObjectURL(s.thumb);
+    s.photo = s.photoData = s.thumb = null;
+  } else {
+    if (s.vurl) URL.revokeObjectURL(s.vurl);
+    s.video = s.videoData = s.vurl = null;
+  }
+  renderRow(i);
+}
+
+// Tukar foto (atau video) dengan baris di atas/bawahnya, untuk memperbaiki pasangan yang salah
+function moveField(kind, i, j) {
+  if (j < 0 || j >= slots.length) return;
+  const keys = kind === "photo" ? ["photo", "photoData", "thumb"] : ["video", "videoData", "vurl"];
+  const a = slots[i], b = slots[j];
+  keys.forEach((k) => { const t = a[k]; a[k] = b[k]; b[k] = t; });
+  renderRow(i);
+  renderRow(j);
+}
+
+function buildRow(i) {
+  const s = slots[i];
+  const last = slots.length - 1;
+  const el = document.createElement("div");
+  el.className = "slot";
+  const btns = (kind, has) =>
+    `<div class="pbtns">` +
+    `<button type="button" class="ghost small pick" data-act="pick-${kind}" data-i="${i}">${has ? "Ganti" : "Pilih"}</button>` +
+    `<button type="button" class="ghost small" data-act="up-${kind}" data-i="${i}" ${i === 0 ? "disabled" : ""} aria-label="Geser ke atas">▲</button>` +
+    `<button type="button" class="ghost small" data-act="down-${kind}" data-i="${i}" ${i === last ? "disabled" : ""} aria-label="Geser ke bawah">▼</button>` +
+    `<button type="button" class="ghost small" data-act="del-${kind}" data-i="${i}" ${has ? "" : "disabled"} aria-label="Hapus">✕</button>` +
+    `</div>`;
+  el.innerHTML =
+    `<div class="slot-head"><span class="num">${i + 1}</span><span>Pasangan ${i + 1}</span><span class="spacer"></span>` +
+    `<button type="button" class="small pairBtn" data-act="pair" data-i="${i}">Pilih pasangan</button></div>` +
+    `<div class="pair">` +
+      `<div class="pane">` +
+        `<div class="pv" data-act="view-photo" data-i="${i}">` +
+          (s.thumb ? `<img src="${s.thumb}" alt="">` : `<span>Foto belum dipilih</span>`) +
+          `<span class="tag">Foto</span></div>` +
+        `<div class="fn">${s.photo ? esc(s.photo.name) + " · " + mb(s.photo.size) : "—"}</div>` +
+        btns("photo", !!s.photo) +
+      `</div>` +
+      `<div class="pane">` +
+        `<div class="pv" data-act="view-video" data-i="${i}">` +
+          (s.vurl ? `<video src="${s.vurl}#t=0.1" preload="metadata" muted playsinline></video><span class="play">▶ Putar</span>` : `<span>Video belum dipilih</span>`) +
+          `<span class="tag">Video</span></div>` +
+        `<div class="fn">${s.video ? esc(s.video.name) + " · " + mb(s.video.size) : "—"}</div>` +
+        btns("video", !!s.video) +
+      `</div>` +
+    `</div>`;
+  return el;
+}
+
+function renderRow(i) {
+  const box = $("slots");
+  const el = buildRow(i);
+  if (box.children[i]) box.replaceChild(el, box.children[i]);
+  else box.appendChild(el);
+}
+
+function renderSlots() {
+  const box = $("slots");
+  box.innerHTML = "";
+  slots.forEach((_, i) => box.appendChild(buildRow(i)));
+}
+
+$("slots").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-act]");
+  if (!b || b.disabled) return;
+  const i = parseInt(b.dataset.i, 10);
+  const act = b.dataset.act;
+  if (act === "pair") return pickPair(i);
+  if (act === "pick-photo") return pickOne("photo", i);
+  if (act === "pick-video") return pickOne("video", i);
+  if (act === "up-photo") return moveField("photo", i, i - 1);
+  if (act === "down-photo") return moveField("photo", i, i + 1);
+  if (act === "up-video") return moveField("video", i, i - 1);
+  if (act === "down-video") return moveField("video", i, i + 1);
+  if (act === "del-photo") return clearFile(i, "photo");
+  if (act === "del-video") return clearFile(i, "video");
+  if (act === "view-photo") return openLightbox("photo", i);
+  if (act === "view-video") return openLightbox("video", i);
+});
+
+// ---------- pratinjau layar penuh ----------
+function openLightbox(kind, i) {
+  const s = slots[i];
+  const body = $("lbBody");
+  body.innerHTML = "";
+  if (kind === "photo" && s.thumb) {
+    const im = document.createElement("img");
+    im.src = s.thumb;
+    body.appendChild(im);
+    $("lbCap").textContent = `Foto ${i + 1} · ${s.photo.name}`;
+  } else if (kind === "video" && s.vurl) {
+    const v = document.createElement("video");
+    v.src = s.vurl;
+    v.controls = true;
+    v.autoplay = true;
+    v.playsInline = true;
+    body.appendChild(v);
+    $("lbCap").textContent = `Video ${i + 1} · ${s.video.name}`;
+  } else {
+    return;
+  }
+  $("lightbox").style.display = "flex";
+}
+function closeLightbox() {
+  const v = $("lbBody").querySelector("video");
+  if (v) v.pause();
+  $("lbBody").innerHTML = "";
+  $("lightbox").style.display = "none";
+}
+$("lbClose").addEventListener("click", closeLightbox);
+$("lightbox").addEventListener("click", (e) => { if (e.target === $("lightbox")) closeLightbox(); });
 
 function alertUnreadable(names) {
   alert(
@@ -190,6 +338,7 @@ function alertUnreadable(names) {
   );
 }
 
+// ---------- memilih file ----------
 const picker = $("picker");
 function openPicker(accept, multiple, onFiles) {
   picker.value = "";
@@ -198,13 +347,32 @@ function openPicker(accept, multiple, onFiles) {
   picker.onchange = () => { if (picker.files.length) onFiles(Array.from(picker.files)); };
   picker.click();
 }
+
 function pickOne(kind, i) {
   openPicker(kind === "photo" ? "image/*" : "video/*", false, async (files) => {
     try { await setFile(i, kind, files[0]); }
     catch (_) { alertUnreadable([files[0].name]); }
-    renderSlots();
+    renderRow(i);
   });
 }
+
+// Satu pasangan: pilih 1 foto + 1 video sekaligus, langsung masuk ke baris yang sama
+function pickPair(i) {
+  openPicker("image/*,video/*", true, async (files) => {
+    const photos = files.filter((f) => kindOf(f) === "photo");
+    const videos = files.filter((f) => kindOf(f) === "video");
+    if (photos.length !== 1 || videos.length !== 1) {
+      alert(`Pilih tepat 1 foto dan 1 video untuk satu pasangan. Yang terpilih: ${photos.length} foto, ${videos.length} video.`);
+      return;
+    }
+    const failed = [];
+    try { await setFile(i, "photo", photos[0]); } catch (_) { failed.push(photos[0].name); }
+    try { await setFile(i, "video", videos[0]); } catch (_) { failed.push(videos[0].name); }
+    renderRow(i);
+    if (failed.length) alertUnreadable(failed);
+  });
+}
+
 function pickBulk(kind) {
   openPicker(kind === "photo" ? "image/*" : "video/*", true, async (files) => {
     if ($("sortName").checked) {
@@ -227,6 +395,17 @@ function pickBulk(kind) {
 }
 $("bulkPhoto").addEventListener("click", () => pickBulk("photo"));
 $("bulkVideo").addEventListener("click", () => pickBulk("video"));
+
+function setMode(mode) {
+  const pair = mode === "pair";
+  $("modeBulk").classList.toggle("on", !pair);
+  $("modePair").classList.toggle("on", pair);
+  $("bulkBox").style.display = pair ? "none" : "block";
+  $("pairHint").style.display = pair ? "block" : "none";
+  $("slots").classList.toggle("mode-pair", pair);
+}
+$("modeBulk").addEventListener("click", () => setMode("bulk"));
+$("modePair").addEventListener("click", () => setMode("pair"));
 
 // ---------- jaringan ----------
 function authHeader() { return { Authorization: "Bearer " + $("pw").value }; }
@@ -362,6 +541,7 @@ $("goBtn").addEventListener("click", async () => {
   if (missingPhoto !== -1) { alert(`Foto nomor ${missingPhoto + 1} belum dipilih.`); return; }
   const missingVideo = slots.filter((s) => !s.video).length;
   if (missingVideo && !confirm(`${missingVideo} video belum dipilih. Lanjut tanpa video itu?`)) return;
+  if (!confirm(`Upload ${slots.length} pasangan foto dan video? Pastikan foto dan video di tiap baris sudah cocok (cek pratinjaunya).`)) return;
 
   pollToken++;
   $("result").style.display = "none";
@@ -520,6 +700,7 @@ function showResult(order, ready) {
 
 resizeSlots();
 renderSlots();
+setMode("bulk");
 </script>
 </body>
 </html>
