@@ -113,6 +113,7 @@
     <button class="ghost" id="copyBtn" type="button">Salin link</button>
     <button id="openBtn" type="button">Buka halaman scan</button>
   </div>
+  <button class="ghost" id="posterBtn" type="button" style="width:100%;margin-top:8px">Buat poster dari order ini</button>
 </div>
 
 <div id="lightbox">
@@ -125,8 +126,8 @@
 
 <script>
 // ====== KONFIGURASI (wajib diisi) ======
-const WORKER_URL = "https://GANTI-DENGAN-URL-WORKER.workers.dev"; // tanpa / di akhir
-const SCAN_URL   = "https://USERNAMEMU.github.io/NAMA-REPO/index.html"; // halaman scan pembeli
+const WORKER_URL = "https://hana-multiscan.nuzulll-29.workers.dev"; // tanpa / di akhir
+const SCAN_URL   = "https://nuzulll29-prog.github.io/Multiscan_Project/index.html"; // halaman scan pembeli
 // =======================================
 
 const UPLOAD_CONCURRENCY = 3;  // jumlah file yang diunggah bersamaan
@@ -695,6 +696,7 @@ function showResult(order, ready) {
     catch (_) { prompt("Salin link ini:", link); }
   };
   $("openBtn").onclick = () => window.open(link, "_blank");
+  $("posterBtn").onclick = () => window.open(new URL("poster.html", SCAN_URL).href + "?order=" + encodeURIComponent(order), "_blank");
   if (wasHidden || ready) $("result").scrollIntoView({ behavior: "smooth" });
 }
 
