@@ -1,0 +1,543 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Template Poster AR</title>
+<script src="config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  :root { --bg:#faf6f8; --card:#fff; --ink:#2b2030; --mute:#7a6d80; --pink:#e58fae; --line:#ece3e8; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    padding:16px 16px calc(40px + env(safe-area-inset-bottom,0px)); max-width:640px; margin-inline:auto; }
+  h1 { font-size:1.25rem; margin:4px 0 14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; margin-bottom:14px; }
+  label { display:block; font-size:.85rem; color:var(--mute); margin:10px 0 4px; }
+  input, textarea, select { width:100%; padding:11px; font:inherit; border:1px solid var(--line); border-radius:10px; background:#fff; color:var(--ink); }
+  textarea { resize:vertical; min-height:58px; }
+  button { border:0; border-radius:10px; padding:12px 14px; font:600 .95rem system-ui,sans-serif; background:var(--pink); color:#fff; }
+  .tabs { display:flex; gap:6px; background:#f3e9ee; padding:4px; border-radius:12px; }
+  .tabs button { flex:1; background:transparent; color:var(--mute); padding:10px 6px; font-size:.85rem; }
+  .tabs button.on { background:#fff; color:var(--ink); box-shadow:0 1px 3px rgba(0,0,0,.1); }
+  .chk { display:flex; align-items:center; gap:8px; color:var(--ink); }
+  .chk input { width:18px; height:18px; }
+  .two { display:grid; grid-template-columns:2fr 1fr; gap:8px; }
+  .it { display:flex; gap:10px; align-items:flex-start; padding:10px 0; border-top:1px solid var(--line); }
+  .it:first-child { border-top:0; }
+  button.ph { width:64px; height:64px; flex:none; padding:0; border-radius:8px; background:#f3e9ee center/cover; border:1px dashed #cdbcc6; font-size:.72rem; color:var(--mute); }
+  .f { flex:1; min-width:0; display:grid; gap:6px; }
+  #cv { width:100%; height:auto; display:block; border-radius:10px; border:1px solid var(--line); }
+  .row { display:flex; gap:8px; align-items:center; margin-top:12px; }
+  .row select, .row button { flex:1; }
+  .hint { font-size:.8rem; color:var(--mute); margin:8px 0 0; line-height:1.5; }
+</style>
+</head>
+<body>
+
+<h1>Template Poster AR</h1>
+
+<div class="card">
+  <div class="tabs">
+    <button id="tA" class="on" type="button">Galeri + kalender</button>
+    <button id="tB" type="button">Linimasa cerita</button>
+  </div>
+  <label for="n">Jumlah foto (1–24)</label>
+  <input id="n" type="number" min="1" max="24" value="12" inputmode="numeric">
+  <label for="title">Judul</label>
+  <input id="title" value="1st Anniversary">
+  <label for="sub">Subjudul</label>
+  <textarea id="sub">Satu tahun, sejuta cerita,
+dan masih banyak lagi yang akan datang</textarea>
+  <label for="side">Teks kecil di pojok kiri atas</label>
+  <textarea id="side">Moments
+Make
+The Best
+Memories</textarea>
+  <label for="foot">Teks penutup</label>
+  <textarea id="foot">Terima kasih sudah menjadi bagian dari perjalanan ini</textarea>
+  <label for="qrcap">Teks di dekat QR</label>
+  <input id="qrcap" value="Scan QR untuk melihat video kenangan perjalanan ini">
+  <label for="link">Link QR (dari halaman upload)</label>
+  <input id="link" placeholder="https://.../index.html?order=HM001" inputmode="url">
+  <p class="hint">Foto di poster harus sama dengan foto yang diunggah sebagai target AR, dengan urutan yang sama.</p>
+  <p class="hint" id="st"></p>
+</div>
+
+<div class="card" id="calBox">
+  <label class="chk"><input type="checkbox" id="calOn" checked> Tampilkan kartu kalender</label>
+  <label for="ctitle">Judul kartu</label>
+  <input id="ctitle" value="1st Anniversary">
+  <div class="two">
+    <div><label for="cmonth">Bulan dan tahun</label><input id="cmonth" type="month" value="2024-01"></div>
+    <div><label for="cday">Tanggal ♥</label><input id="cday" type="number" min="1" max="31" value="15" inputmode="numeric"></div>
+  </div>
+  <p class="hint">Kalender berubah otomatis mengikuti bulan yang dipilih pelanggan. Kosongkan tanggal kalau tidak perlu tanda hati.</p>
+</div>
+
+<div class="card" id="items"></div>
+
+<div class="card">
+  <canvas id="cv" width="1200" height="1800"></canvas>
+  <div class="row">
+    <select id="q">
+      <option value="1">1200 × 1800 (cepat)</option>
+      <option value="2">2400 × 3600 (cetak)</option>
+    </select>
+    <button id="dl" type="button">Unduh PNG</button>
+  </div>
+</div>
+
+<script>
+const W = 1200, $ = (id) => document.getElementById(id);
+let H = 1800;
+const SCRIPT = '"Segoe Script","Bradley Hand","Brush Script MT","Dancing Script",cursive';
+const BODY = 'system-ui,-apple-system,"Segoe UI",Roboto,sans-serif';
+const MONO = '"Courier New",ui-monospace,monospace';
+const SERIF = '"Cormorant Garamond","Palatino Linotype",Georgia,"Times New Roman",serif';
+const TAPE = ["#cdb99a", "#a9b8a0", "#dcaeaa", "#a9b5c9", "#c9b9da"];
+const MON = ["Januari","Februari","Maret","April","Mei","Juni","Juli","Agustus","September","Oktober","November","Desember"];
+const INK = "#2b2030", p2 = (n) => String(n).padStart(2, "0");
+let tpl = "A", items = [], qrCv = null, qrFor = "";
+
+const count = () => Math.min(24, Math.max(1, parseInt($("n").value, 10) || 1));
+const YEARS = [2015, 2017, 2018, 2019, 2021], LABELS = ["Met & fell in love", "Engaged", "Married", "It's a boy", "Baby girl"];
+function textFor(i) {
+  if (tpl === "A") { const d = p2(i % 12 + 1); return { cap: d + "." + d + ".2024", desc: "" }; }
+  return { cap: String(i < 5 ? YEARS[i] : 2021 + (i - 4)), desc: i < 5 ? LABELS[i] : "Momen " + (i + 1) };
+}
+const newItem = (i) => Object.assign({ img: null, url: "", auto: true }, textFor(i));
+function sync() {
+  const n = count();
+  while (items.length < n) items.push(newItem(items.length));
+  items.length = n;
+}
+
+// ---------- formulir per foto ----------
+function buildItems() {
+  const box = $("items");
+  box.innerHTML = "";
+  items.forEach((it, i) => {
+    const d = document.createElement("div");
+    d.className = "it";
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "ph";
+    b.textContent = it.url ? "" : "Foto " + (i + 1);
+    if (it.url) b.style.backgroundImage = "url(" + it.url + ")";
+    b.onclick = () => pick(i);
+    const f = document.createElement("div");
+    f.className = "f";
+    const c = document.createElement("input");
+    c.value = it.cap;
+    c.placeholder = tpl === "A" ? "Tanggal atau keterangan" : "Tahun";
+    c.oninput = () => { it.cap = c.value; it.auto = false; draw(); };
+    f.appendChild(c);
+    if (tpl === "B") {
+      const t = document.createElement("input");
+      t.value = it.desc;
+      t.placeholder = "Keterangan (mis. Menikah)";
+      t.oninput = () => { it.desc = t.value; it.auto = false; draw(); };
+      f.appendChild(t);
+    }
+    d.append(b, f);
+    box.appendChild(d);
+  });
+}
+
+function pick(i) {
+  const p = document.createElement("input");
+  p.type = "file";
+  p.accept = "image/*";
+  p.onchange = async () => {
+    const file = p.files[0];
+    if (!file) return;
+    try {
+      const bmp = await createImageBitmap(file, { imageOrientation: "from-image" });
+      const t = document.createElement("canvas");
+      t.width = t.height = 128;
+      cover(t.getContext("2d"), bmp, 0, 0, 128, 128);
+      items[i].img = bmp;
+      items[i].url = t.toDataURL("image/jpeg", 0.8);
+      buildItems();
+      draw();
+    } catch (e) {
+      alert("Foto tidak bisa dibaca. Coba pilih lewat File Saya, atau pilih foto lain.");
+    }
+  };
+  p.click();
+}
+
+// ---------- alat gambar ----------
+function cover(g, img, x, y, w, h) {
+  const r = Math.max(w / img.width, h / img.height), sw = w / r, sh = h / r;
+  g.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, x, y, w, h);
+}
+function fitText(g, t, maxW, size, fam, wt) {
+  let s = size;
+  g.font = (wt || "") + " " + s + "px " + fam;
+  while (s > 12 && g.measureText(t).width > maxW) { s -= 2; g.font = (wt || "") + " " + s + "px " + fam; }
+  return s;
+}
+function wrap(g, text, maxW) {
+  const out = [];
+  String(text).split("\n").forEach((par) => {
+    let line = "";
+    par.split(" ").forEach((w) => {
+      const t = line ? line + " " + w : w;
+      if (line && g.measureText(t).width > maxW) { out.push(line); line = w; } else line = t;
+    });
+    out.push(line);
+  });
+  return out;
+}
+function heart(g, x, y, s) {
+  g.beginPath();
+  g.moveTo(x, y + s * .35);
+  g.bezierCurveTo(x - s * .6, y - s * .05, x - s * .35, y - s * .55, x, y - s * .2);
+  g.bezierCurveTo(x + s * .35, y - s * .55, x + s * .6, y - s * .05, x, y + s * .35);
+  g.closePath();
+}
+function divider(g, cx, y, hw) {
+  g.strokeStyle = INK; g.lineWidth = 2;
+  g.beginPath(); g.moveTo(cx - hw, y); g.lineTo(cx - 20, y); g.moveTo(cx + 20, y); g.lineTo(cx + hw, y); g.stroke();
+  g.fillStyle = INK; heart(g, cx, y - 2, 20); g.fill();
+}
+function blob(g, x, y, rx, ry, c) { g.fillStyle = c; g.beginPath(); g.ellipse(x, y, rx, ry, .4, 0, 7); g.fill(); }
+function plane(g, x, y) {
+  g.save(); g.strokeStyle = INK; g.lineWidth = 2; g.setLineDash([8, 7]);
+  g.beginPath(); g.moveTo(x - 170, y + 60); g.quadraticCurveTo(x - 80, y + 95, x - 25, y + 28); g.stroke();
+  g.setLineDash([]);
+  g.beginPath(); g.moveTo(x - 20, y + 25); g.lineTo(x + 75, y - 30); g.lineTo(x + 20, y + 35); g.closePath();
+  g.moveTo(x + 75, y - 30); g.lineTo(x + 5, y + 15); g.stroke(); g.restore();
+}
+function flowers(g, x, y) {
+  g.strokeStyle = "#6b5640"; g.fillStyle = "#d8b9a0"; g.lineWidth = 2;
+  for (let k = 0; k < 5; k++) {
+    const a = -1.2 + k * .25, L = 130 + (k % 2) * 30, ex = x + Math.cos(a) * L, ey = y + Math.sin(a) * L;
+    g.beginPath(); g.moveTo(x, y); g.lineTo(ex, ey); g.stroke();
+    for (let j = 0; j < 4; j++) { g.beginPath(); g.arc(ex + Math.cos(j * 1.7) * 10, ey + Math.sin(j * 1.7) * 10, 5, 0, 7); g.fill(); }
+  }
+}
+function torn(g, x, y, w, h) {
+  const st = 16, pts = [], o = (k) => Math.sin(k * 12.9898) * 5;
+  let k = 0;
+  for (let a = 0; a <= w; a += st) pts.push([x + a, y + o(k++)]);
+  for (let a = 0; a <= h; a += st) pts.push([x + w + o(k++), y + a]);
+  for (let a = w; a >= 0; a -= st) pts.push([x + a, y + h + o(k++)]);
+  for (let a = h; a >= 0; a -= st) pts.push([x + o(k++), y + a]);
+  g.beginPath();
+  pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])));
+  g.closePath();
+}
+
+function polaroid(g, it, cx, cy, s, rot, i, cap, land) {
+  const w = s, m = w * 0.07, pw = w - 2 * m, h = land ? s * 1.04 : s * 1.14, ph = land ? pw * 0.7 : h * 0.78;
+  g.save();
+  g.translate(cx, cy); g.rotate(rot);
+  g.shadowColor = "rgba(0,0,0,.2)"; g.shadowBlur = s * 0.06; g.shadowOffsetY = s * 0.025;
+  g.fillStyle = "#fff"; g.fillRect(-w / 2, -h / 2, w, h);
+  g.shadowColor = "transparent";
+  if (it.img) cover(g, it.img, -w / 2 + m, -h / 2 + m, pw, ph);
+  else {
+    g.fillStyle = "#d4d4d7"; g.fillRect(-w / 2 + m, -h / 2 + m, pw, ph);
+    g.fillStyle = "#8d8d93"; g.font = Math.max(14, s * 0.075) + "px " + BODY;
+    g.textAlign = "center"; g.textBaseline = "middle";
+    g.fillText("Ganti foto di sini", 0, -h / 2 + m + ph / 2);
+  }
+  if (cap) {
+    g.fillStyle = "#3a2f3d"; g.textAlign = "center"; g.textBaseline = "middle";
+    fitText(g, cap, pw, s * 0.085, MONO);
+    g.fillText(cap, 0, h / 2 - (h - ph - m) / 2 + m * 0.1);
+  }
+  if (!land) {
+    g.fillStyle = TAPE[i % 5] + "dd";
+    g.translate(0, -h / 2); g.rotate(-0.04);
+    g.fillRect(-w * 0.17, -w * 0.05, w * 0.34, w * 0.1);
+  }
+  g.restore();
+}
+
+// ---------- kartu kalender (menyesuaikan bulan pilihan pelanggan) ----------
+function card(g, x, y, w, h) {
+  g.save();
+  g.shadowColor = "rgba(0,0,0,.2)"; g.shadowBlur = 18; g.shadowOffsetY = 6;
+  g.fillStyle = "#f7f2e7"; torn(g, x, y, w, h); g.fill();
+  g.restore();
+  const u = Math.min(w / 520, h / 600), cx = x + w / 2;
+  g.save(); g.translate(cx, y); g.rotate(-.03); g.fillStyle = TAPE[0] + "dd";
+  g.fillRect(-60 * u, -14 * u, 120 * u, 32 * u); g.restore();
+  g.fillStyle = INK; g.textAlign = "center"; g.textBaseline = "alphabetic";
+  const t = $("ctitle").value || "";
+  fitText(g, t, w * .84, Math.min(80 * u, h * .14), SCRIPT);
+  g.fillText(t, cx, y + h * .2);
+  const ym = ($("cmonth").value || "2024-01").split("-").map(Number), yy = ym[0], mm = ym[1];
+  g.font = 30 * u + "px " + BODY; g.letterSpacing = 3 * u + "px";
+  g.fillText(MON[mm - 1] + " " + yy, cx, y + h * .31);
+  g.letterSpacing = "0px";
+  const cw = w * .84 / 7, rh = h * .5 / 7, x0 = x + w * .08 + cw / 2, hy = y + h * .4, fs = Math.min(cw, rh) * .5;
+  g.font = fs + "px " + BODY;
+  ["S", "S", "R", "K", "J", "S", "M"].forEach((d, i) => g.fillText(d, x0 + i * cw, hy));
+  const first = (new Date(yy, mm - 1, 1).getDay() + 6) % 7, days = new Date(yy, mm, 0).getDate(), mark = parseInt($("cday").value, 10);
+  for (let d = 1; d <= days; d++) {
+    const i = first + d - 1, px = x0 + (i % 7) * cw, py = hy + (Math.floor(i / 7) + 1) * rh * .98 + rh * .1;
+    g.fillStyle = INK; g.fillText(d, px, py);
+    if (d === mark) { g.strokeStyle = "#b5483c"; g.lineWidth = 3 * u; heart(g, px, py - fs * .38, Math.min(cw, rh) * 1.05); g.stroke(); }
+  }
+  divider(g, cx, y + h * .95, w * .18);
+}
+
+// ---------- header dan footer ----------
+function header(g) {
+  g.fillStyle = INK; g.textAlign = "center"; g.textBaseline = "alphabetic";
+  const t = $("title").value || " ";
+  if (tpl === "A") {
+    fitText(g, t, W - 520, 130, SCRIPT);
+    g.fillText(t, W / 2, 180);
+    divider(g, W / 2, 215, 250);
+    g.save(); g.translate(150, 120); g.rotate(-.25); g.font = "34px " + SCRIPT; g.fillStyle = "#3a2f3d";
+    String($("side").value).split("\n").slice(0, 5).forEach((l, k) => g.fillText(l, 0, k * 40));
+    g.restore();
+    plane(g, W - 130, 95);
+    g.font = "32px " + BODY; g.fillStyle = "#4a3f4e";
+    const lines = wrap(g, $("sub").value, W - 300).slice(0, 3);
+    lines.forEach((l, k) => g.fillText(l, W / 2, 255 + k * 42));
+    divider(g, W / 2, 255 + lines.length * 42 + 5, 150);
+    return 255 + lines.length * 42 + 40;
+  }
+  fitText(g, t, W - 200, 150, SCRIPT);
+  g.fillText(t, W / 2, 230);
+  const sub = String($("sub").value).trim();
+  if (!sub) return 330;
+  g.font = "30px " + BODY; g.fillStyle = "#4a3f4e";
+  const lines = wrap(g, sub, W - 300).slice(0, 2);
+  lines.forEach((l, k) => g.fillText(l, W / 2, 290 + k * 40));
+  return 300 + lines.length * 40;
+}
+
+function qrBox(g, x, y, sz) {
+  g.fillStyle = "#fff"; g.fillRect(x, y, sz, sz);
+  if (qrCv) g.drawImage(qrCv, x + 8, y + 8, sz - 16, sz - 16);
+  else { g.fillStyle = "#999"; g.font = "26px " + BODY; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("QR", x + sz / 2, y + sz / 2); }
+}
+
+function rr(g, x, y, w, h, r) {
+  g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r);
+  g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath();
+}
+function qrFancy(g, cx, y, sz, deco) {
+  const x = cx - sz / 2;
+  g.save();
+  g.shadowColor = "rgba(60,40,30,.22)"; g.shadowBlur = 24; g.shadowOffsetY = 8;
+  g.fillStyle = "#fffdf8"; rr(g, x - 20, y - 20, sz + 40, sz + 40, 26); g.fill();
+  g.restore();
+  g.save();
+  g.strokeStyle = "#cdb99a"; g.lineWidth = 3; g.lineCap = "round"; g.setLineDash([1, 9]);
+  rr(g, x - 9, y - 9, sz + 18, sz + 18, 16); g.stroke();
+  g.restore();
+  if (qrCv) g.drawImage(qrCv, x, y, sz, sz);
+  else { g.fillStyle = "#b9a898"; g.font = "26px " + BODY; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("QR", cx, y + sz / 2); g.textBaseline = "alphabetic"; }
+  if (deco) { g.fillStyle = "#c4a994"; heart(g, x - 66, y + sz / 2, 26); g.fill(); heart(g, x + sz + 66, y + sz / 2, 26); g.fill(); }
+}
+
+function footer(g) {
+  g.textBaseline = "alphabetic";
+  if (tpl === "A") {
+    flowers(g, 60, H - 40);
+    const sz = 140, y = H - 325;
+    qrFancy(g, W / 2, y, sz, true);
+    g.fillStyle = "#3a2f3d"; g.textAlign = "center"; g.font = "26px " + SCRIPT;
+    wrap(g, $("qrcap").value, 520).slice(0, 2).forEach((l, k) => g.fillText(l, W / 2, y + sz + 58 + k * 34));
+    g.save(); g.translate(W - 190, H - 150); g.rotate(-.15); g.font = "30px " + SCRIPT; g.fillStyle = "#4a3f4e";
+    wrap(g, $("foot").value, 250).slice(0, 4).forEach((l, k) => g.fillText(l, 0, k * 38));
+    g.restore();
+    return;
+  }
+  g.fillStyle = INK; g.textAlign = "center";
+  fitText(g, $("foot").value || " ", 560, 54, BODY, "500");
+  g.fillText($("foot").value, W / 2, H - 110);
+  const sz = 140, x = W - 60 - sz, y = H - 255;
+  qrFancy(g, x + sz / 2, y, sz, false);
+  g.fillStyle = "#5a4a5e"; g.textAlign = "center"; g.font = "20px " + BODY;
+  wrap(g, $("qrcap").value, 220).slice(0, 2).forEach((l, k) => g.fillText(l, x + sz / 2, y + sz + 54 + k * 24));
+}
+
+// ---------- susunan ----------
+function layoutGrid(g, top) {
+  const n = items.length, gap = 22, bx = 50, bw = W - 100, bh = H - 370 - top;
+  let best = { s: 0, c: 1 };
+  for (let c = 1; c <= Math.min(n, 6); c++) {
+    const r = Math.ceil(n / c), s = Math.min((bw - gap * (c - 1)) / c, ((bh - gap * (r - 1)) / r) / 1.14);
+    if (s > best.s) best = { s, c };
+  }
+  const c = best.c, s = Math.min(best.s, 380), r = Math.ceil(n / c), rowH = s * 1.14;
+  const y0 = top + (bh - (r * rowH + (r - 1) * gap)) / 2;
+  items.forEach((it, i) => {
+    const row = Math.floor(i / c), inRow = Math.min(c, n - row * c);
+    const rx = bx + (bw - (inRow * s + (inRow - 1) * gap)) / 2;
+    polaroid(g, it, rx + (i % c) * (s + gap) + s / 2, y0 + row * (rowH + gap) + rowH / 2, s, ((i * 7) % 5 - 2) * 0.012, i, it.cap);
+  });
+}
+
+// Foto mengelilingi kartu kalender di tengah; jumlah kolom dan baris dipilih otomatis
+function layoutRing(g, top) {
+  const n = items.length, gap = 18, bx = 45, bw = W - 90, bh = H - 370 - top;
+  let b = { s: 0, C: 4, R: 4 };
+  for (let C = 3; C <= 7; C++) for (let R = 3; R <= 7; R++) {
+    const cap = 2 * C + 2 * R - 4;
+    if (cap < n) continue;
+    const s = Math.min((bw - gap * (C - 1)) / C, ((bh - gap * (R - 1)) / R) / 1.14) * (1 - .03 * (cap - n));
+    if (s > b.s) b = { s, C, R };
+  }
+  const C = b.C, R = b.R, cw = (bw - gap * (C - 1)) / C, ch = (bh - gap * (R - 1)) / R, s = Math.min(cw, ch / 1.14, 330);
+  const cx = (c) => bx + c * (cw + gap), cy = (r) => top + r * (ch + gap);
+  let k = 0;
+  for (let r = 0; r < R; r++) for (let c = 0; c < C; c++) {
+    if (r > 0 && r < R - 1 && c > 0 && c < C - 1) continue;
+    if (k >= n) break;
+    polaroid(g, items[k], cx(c) + cw / 2, cy(r) + ch / 2, s, ((k * 7) % 5 - 2) * .012, k, items[k].cap);
+    k++;
+  }
+  card(g, cx(1) + 12, cy(1) + 12, (C - 2) * cw + (C - 3) * gap - 24, (R - 2) * ch + (R - 3) * gap - 24);
+}
+
+function layoutA(g, top) {
+  if (!$("calOn").checked) return layoutGrid(g, top);
+  if (items.length >= 8) return layoutRing(g, top);
+  card(g, 100, top, W - 200, 520);
+  layoutGrid(g, top + 550);
+}
+
+// Linimasa: garis tengah, foto bergantian kiri-kanan, tahun dan keterangan di sisi sebaliknya
+function layoutB(g, top) {
+  const n = items.length, cx = W / 2, botY = H - 250;
+  const y0 = n > 1 ? top + 140 : (top + botY) / 2, y1 = botY - 160;
+  const pitch = n > 1 ? (y1 - y0) / (n - 1) : 0;
+  const s = n > 1 ? Math.min(290, (pitch - 20) / .52) : 290;
+  const tilt = [-.07, .09, -.04, .03, -.15];
+  g.strokeStyle = INK; g.lineWidth = 3;
+  g.beginPath(); g.moveTo(cx, y0 - 95); g.lineTo(cx, y0 + pitch * (n - 1) + 45); g.stroke();
+  items.forEach((it, i) => {
+    const d = i % 2 === 0 ? -1 : 1, y = y0 + pitch * i, tx = cx - d * 135;
+    g.beginPath(); g.moveTo(cx, y); g.lineTo(cx + d * 250, y); g.stroke();
+    polaroid(g, it, cx + d * (262 + s / 2), y, s, tilt[i % 5], i, "", true);
+    g.fillStyle = INK; g.textAlign = "center"; g.textBaseline = "alphabetic";
+    g.font = "26px " + BODY; g.letterSpacing = "2px";
+    const lines = wrap(g, String(it.desc).toUpperCase(), 220).slice(0, 3);
+    const last = y + 14, first = last - (lines.length - 1) * 34;
+    lines.forEach((l, k) => g.fillText(l, tx, first + k * 34));
+    g.letterSpacing = "0px";
+    g.font = "58px " + SERIF; g.fillText(it.cap, tx, first - 44);
+  });
+}
+
+function render(g, S) {
+  g.save();
+  g.scale(S, S);
+  g.fillStyle = tpl === "A" ? "#f1ece1" : "#ffffff"; g.fillRect(0, 0, W, H);
+  if (tpl === "A") {
+    blob(g, 0, 0, 260, 170, "rgba(214,196,170,.45)");
+    blob(g, W, H, 300, 170, "rgba(214,196,170,.45)");
+  }
+  const top = header(g);
+  if (tpl === "A") layoutA(g, top); else layoutB(g, top);
+  footer(g);
+  g.restore();
+}
+
+let raf = 0;
+function draw() {
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(() => render($("cv").getContext("2d"), 1));
+}
+
+function makeQR() {
+  const link = $("link").value.trim();
+  if (link === qrFor) return;
+  qrFor = link;
+  qrCv = null;
+  if (link && window.QRCode) {
+    const d = document.createElement("div");
+    new QRCode(d, { text: link, width: 256, height: 256, correctLevel: QRCode.CorrectLevel.M });
+    qrCv = d.querySelector("canvas");
+  }
+  draw();
+}
+
+const DEF = {
+  A: { n: "12", title: "1st Anniversary", sub: "Satu tahun, sejuta cerita,\ndan masih banyak lagi yang akan datang",
+       foot: "Terima kasih sudah menjadi bagian dari perjalanan ini", qrcap: "Scan QR untuk melihat video kenangan perjalanan ini" },
+  B: { n: "5", title: "Our Love Story", sub: "", foot: "Kate & Oliver", qrcap: "Scan untuk melihat video kenangan" },
+};
+function setTpl(t) {
+  const old = tpl;
+  Object.keys(DEF[t]).forEach((k) => { if ($(k).value === DEF[old][k]) $(k).value = DEF[t][k]; });
+  tpl = t;
+  H = t === "A" ? 1800 : 1600;
+  $("cv").height = H;
+  items.forEach((it, i) => { if (it.auto) Object.assign(it, textFor(i)); });
+  sync();
+  $("tA").classList.toggle("on", t === "A");
+  $("tB").classList.toggle("on", t === "B");
+  $("calBox").style.display = t === "A" ? "block" : "none";
+  $("side").previousElementSibling.style.display = $("side").style.display = t === "A" ? "" : "none";
+  buildItems();
+  draw();
+}
+
+["title", "sub", "side", "foot", "qrcap", "ctitle", "cmonth", "cday", "calOn"].forEach((id) => $(id).addEventListener("input", draw));
+$("calOn").addEventListener("change", draw);
+$("link").addEventListener("input", makeQR);
+$("n").addEventListener("input", () => { sync(); buildItems(); draw(); });
+$("tA").onclick = () => setTpl("A");
+$("tB").onclick = () => setTpl("B");
+$("dl").onclick = () => {
+  const S = +$("q").value, c = document.createElement("canvas");
+  c.width = W * S; c.height = H * S;
+  render(c.getContext("2d"), S);
+  c.toBlob((b) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(b);
+    a.download = "poster-ar.png";
+    a.click();
+  }, "image/png");
+};
+
+sync();
+buildItems();
+draw();
+
+// Buka dengan poster.html?order=HM001 (opsional &t=B): foto, jumlah foto, dan link QR terisi otomatis dari R2
+async function loadOrder(order) {
+  const st = $("st"), r2 = (window.HM_CONFIG && window.HM_CONFIG.r2Base) || "";
+  if (!r2 || r2.includes("GANTI")) { st.textContent = "Alamat R2 belum diisi di config.js."; return; }
+  st.textContent = "Memuat foto order " + order + "…";
+  const base = r2 + "/orders/" + encodeURIComponent(order) + "/photos/";
+  const blobs = await Promise.all(Array.from({ length: 24 }, (_, i) =>
+    fetch(base + p2(i + 1) + ".jpg").then((r) => (r.ok ? r.blob() : null)).catch(() => null)));
+  let n = 0;
+  while (n < 24 && blobs[n]) n++;
+  if (!n) { st.textContent = "Foto untuk order ini belum ditemukan di R2."; return; }
+  $("n").value = n;
+  sync();
+  for (let k = 0; k < n; k++) {
+    const bmp = await createImageBitmap(blobs[k]), t = document.createElement("canvas");
+    t.width = t.height = 128;
+    cover(t.getContext("2d"), bmp, 0, 0, 128, 128);
+    Object.assign(items[k], { img: bmp, url: t.toDataURL("image/jpeg", .8) });
+  }
+  st.textContent = n + " foto dimuat otomatis dari order " + order + ".";
+  buildItems();
+  draw();
+}
+const Q = new URLSearchParams(location.search), ORDER = Q.get("order");
+if (Q.get("t") === "B") setTpl("B");
+if (ORDER) {
+  $("link").value = Q.get("link") || new URL("index.html?order=" + encodeURIComponent(ORDER), location.href).href;
+  makeQR();
+  loadOrder(ORDER);
+}
+</script>
+</body>
+</html>
