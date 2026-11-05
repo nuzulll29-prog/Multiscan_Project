@@ -78,6 +78,16 @@
   <input type="number" id="count" min="1" max="24" value="12" inputmode="numeric">
 </div>
 
+<div class="card">
+  <b>Link untuk pelanggan</b>
+  <p class="hintp">Pelanggan mengunggah sendiri tanpa password, hanya ke order di atas (kode order dan jumlah foto diambil dari isian di atas). Setelah pelanggan menekan Kirim, order terkunci.</p>
+  <label for="days">Masa berlaku (hari)</label>
+  <input id="days" type="number" value="7" min="1" max="60" inputmode="numeric">
+  <div class="row" style="margin-top:10px"><button id="mkLink" type="button">Buat link</button><button class="ghost" id="unlockBtn" type="button">Buka kunci order</button></div>
+  <div class="link" id="custLink" style="display:none"></div>
+  <div class="row" id="custBtns" style="display:none"><button class="ghost" id="cpLink" type="button">Salin</button><button id="waLink" type="button">Kirim via WhatsApp</button></div>
+</div>
+
 <div class="card" id="pickCard">
   <div class="tabs">
     <button class="tab on" id="modeBulk" type="button">Pilih banyak sekaligus</button>
@@ -126,8 +136,8 @@
 
 <script>
 // ====== KONFIGURASI (wajib diisi) ======
-const WORKER_URL = "https://hana-multiscan.nuzulll-29.workers.dev"; // tanpa / di akhir
-const SCAN_URL   = "https://nuzulll29-prog.github.io/Multiscan_Project/index.html"; // halaman scan pembeli
+const WORKER_URL = "https://GANTI-DENGAN-URL-WORKER.workers.dev"; // tanpa / di akhir
+const SCAN_URL   = "https://USERNAMEMU.github.io/NAMA-REPO/index.html"; // halaman scan pembeli
 // =======================================
 
 const UPLOAD_CONCURRENCY = 3;  // jumlah file yang diunggah bersamaan
@@ -191,18 +201,41 @@ function kindOf(file) {
   return null;
 }
 
+// Chrome tidak bisa menampilkan HEIC, jadi diubah ke JPEG di browser (pustaka dimuat hanya saat dibutuhkan)
+async function heicToJpeg(file) {
+  if (!window.heic2any) {
+    await new Promise((res, rej) => {
+      const sc = document.createElement("script");
+      sc.src = "https://cdnjs.cloudflare.com/ajax/libs/heic2any/0.0.4/heic2any.min.js";
+      sc.onload = res;
+      sc.onerror = () => rej(new Error("pustaka HEIC gagal dimuat"));
+      document.head.appendChild(sc);
+    });
+  }
+  const out = await window.heic2any({ blob: file, toType: "image/jpeg", quality: 0.9 });
+  return Array.isArray(out) ? out[0] : out;
+}
+
 // Baca file langsung saat dipilih, selagi izin akses dari Android masih aktif.
 async function setFile(i, kind, file) {
   const s = slots[i];
   const k = kindOf(file);
   if (k && k !== kind) throw new Error("tipe file salah");
-  const data = await file.arrayBuffer(); // melempar error kalau file tidak bisa dibaca
+  const heic = kind === "photo" && (/\.(heic|heif)$/i.test(file.name) || /^image\/hei[cf]/.test(file.type));
+  let data, type = file.type, raw = false;
+  if (heic) {
+    try { const jb = await heicToJpeg(file); data = await jb.arrayBuffer(); type = "image/jpeg"; }
+    catch (_) { data = await file.arrayBuffer(); raw = true; } // cadangan: kirim apa adanya, Cloudinary yang mengonversi
+  } else {
+    data = await file.arrayBuffer(); // melempar error kalau file tidak bisa dibaca
+  }
   if (kind === "photo") {
-    const blob = new Blob([data], { type: file.type || "image/jpeg" });
+    const blob = new Blob([data], { type: type || "image/jpeg" });
     if (s.thumb) URL.revokeObjectURL(s.thumb);
     s.photo = file;
     s.photoData = blob;
     s.thumb = URL.createObjectURL(blob);
+    s.noPreview = raw;
   } else {
     const blob = new Blob([data], { type: file.type || "video/mp4" });
     if (s.vurl) URL.revokeObjectURL(s.vurl);
@@ -227,7 +260,7 @@ function clearFile(i, kind) {
 // Tukar foto (atau video) dengan baris di atas/bawahnya, untuk memperbaiki pasangan yang salah
 function moveField(kind, i, j) {
   if (j < 0 || j >= slots.length) return;
-  const keys = kind === "photo" ? ["photo", "photoData", "thumb"] : ["video", "videoData", "vurl"];
+  const keys = kind === "photo" ? ["photo", "photoData", "thumb", "noPreview"] : ["video", "videoData", "vurl"];
   const a = slots[i], b = slots[j];
   keys.forEach((k) => { const t = a[k]; a[k] = b[k]; b[k] = t; });
   renderRow(i);
@@ -252,7 +285,7 @@ function buildRow(i) {
     `<div class="pair">` +
       `<div class="pane">` +
         `<div class="pv" data-act="view-photo" data-i="${i}">` +
-          (s.thumb ? `<img src="${s.thumb}" alt="">` : `<span>Foto belum dipilih</span>`) +
+          (s.thumb ? (s.noPreview ? `<span>HEIC: pratinjau tidak tersedia, tetap bisa diunggah</span>` : `<img src="${s.thumb}" alt="">`) : `<span>Foto belum dipilih</span>`) +
           `<span class="tag">Foto</span></div>` +
         `<div class="fn">${s.photo ? esc(s.photo.name) + " · " + mb(s.photo.size) : "—"}</div>` +
         btns("photo", !!s.photo) +
@@ -304,7 +337,7 @@ function openLightbox(kind, i) {
   const s = slots[i];
   const body = $("lbBody");
   body.innerHTML = "";
-  if (kind === "photo" && s.thumb) {
+  if (kind === "photo" && s.thumb && !s.noPreview) {
     const im = document.createElement("img");
     im.src = s.thumb;
     body.appendChild(im);
@@ -676,7 +709,7 @@ async function pollUntilReady(order) {
 }
 
 function showResult(order, ready) {
-  const link = `${SCAN_URL}?order=${encodeURIComponent(order)}`;
+  const link = `${WORKER_URL}/s/${encodeURIComponent(order)}`;
   const wasHidden = $("result").style.display !== "block";
   const title = $("resultTitle");
   if (ready) {
@@ -699,6 +732,30 @@ function showResult(order, ready) {
   $("posterBtn").onclick = () => window.open(new URL("poster.html", SCAN_URL).href + "?order=" + encodeURIComponent(order), "_blank");
   if (wasHidden || ready) $("result").scrollIntoView({ behavior: "smooth" });
 }
+
+// ---------- link untuk pelanggan ----------
+const adminPost = (path, body) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+$("mkLink").addEventListener("click", async () => {
+  const order = validOrder();
+  if (!order) return;
+  const days = parseInt($("days").value, 10) || 7;
+  try {
+    const r = await adminPost("/admin/link", { order, count: count(), days });
+    const link = new URL("kirim.html", SCAN_URL).href + `?o=${encodeURIComponent(r.o)}&n=${r.n}&e=${r.e}&t=${r.t}`;
+    $("custLink").textContent = link;
+    $("custLink").style.display = "block";
+    $("custBtns").style.display = "flex";
+    $("cpLink").onclick = async () => {
+      try { await navigator.clipboard.writeText(link); $("cpLink").textContent = "Tersalin ✓"; } catch (_) { prompt("Salin link ini:", link); }
+    };
+    $("waLink").onclick = () => window.open("https://wa.me/?text=" + encodeURIComponent(`Halo! Silakan kirim foto dan video, lalu pilih desain posternya, lewat link ini (berlaku ${days} hari):\n${link}`), "_blank");
+  } catch (e) { alert(e.message); }
+});
+$("unlockBtn").addEventListener("click", async () => {
+  const order = validOrder();
+  if (!order) return;
+  try { await adminPost("/admin/unlock", { order }); alert("Kunci order " + order + " dibuka."); } catch (e) { alert(e.message); }
+});
 
 resizeSlots();
 renderSlots();
