@@ -624,15 +624,6 @@ if (CUST) {
   loadOrder(CU.o).then(() => applySaved(CU.o));
 }
 
-// tautan ke template 12 bulan bayi (bayi.html), membawa order atau link pelanggan yang sama
-(function () {
-  const a = document.createElement("a");
-  a.href = "bayi.html" + location.search;
-  a.textContent = "Template 12 bulan bayi »";
-  a.style.cssText = "display:block;margin:10px 2px 0;font-size:.9rem;color:#e58fae;font-weight:600";
-  document.querySelector(".tabs").after(a);
-})();
-
 // ================= Template C: 12 bulan bayi, tema bergambar (latar + posisi dari themes.json) =================
 const FUN = '"Fredoka",system-ui,sans-serif', FUNS = '"Pacifico","Segoe Script",cursive';
 let THEMES = { C: [] };
@@ -695,10 +686,10 @@ function layoutC(g, top) {
 }
 function footerC(g) {
   const T = themeC();
-  g.fillStyle = "rgba(255,255,255,.82)"; rr(g, W / 2 - 290, H - 112, 580, 78, 22); g.fill();
-  qrFancy(g, W / 2, H - 255, 110, false);
+  g.fillStyle = "rgba(255,255,255,.88)"; rr(g, W / 2 - 290, H - 88, 580, 70, 20); g.fill();
+  qrFancy(g, W / 2, H - 215, 104, false);
   g.fillStyle = T ? T.ink : "#5b4033"; g.textAlign = "center"; g.textBaseline = "alphabetic"; g.font = `600 22px ${FUN}`;
-  wrap(g, $("qrcap").value, 520).slice(0, 2).forEach((l, k) => g.fillText(l, W / 2, H - 76 + k * 28));
+  wrap(g, $("qrcap").value, 520).slice(0, 2).forEach((l, k) => g.fillText(l, W / 2, H - 56 + k * 26));
 }
 // themes.js (window.POSTER_THEMES, format objek) diubah ke format yang dipakai renderer ini
 function fromThemesJs(src) {
