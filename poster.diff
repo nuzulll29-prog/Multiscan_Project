@@ -1,39 +1,32 @@
---- /mnt/user-data/uploads/poster.html	2026-11-08 04:54:31.849902000 +0000
-+++ poster.html	2026-11-08 04:55:16.979051063 +0000
-@@ -7,6 +7,7 @@
- <title>Template Poster AR</title>
- <script src="config.js"></script>
- <script src="tema-bayi.js"></script>
-+<script src="themes.js"></script>
- <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
- <style>
-   :root { --bg:#faf6f8; --card:#fff; --ink:#2b2030; --mute:#7a6d80; --pink:#e58fae; --line:#ece3e8; }
-@@ -699,7 +700,27 @@
-   g.fillStyle = T ? T.ink : "#5b4033"; g.textAlign = "center"; g.textBaseline = "alphabetic"; g.font = `600 22px ${FUN}`;
-   wrap(g, $("qrcap").value, 520).slice(0, 2).forEach((l, k) => g.fillText(l, W / 2, H - 76 + k * 28));
+--- /home/claude/poster_prev.html	2026-11-08 05:22:49.983357000 +0000
++++ poster.html	2026-11-08 05:22:50.029933152 +0000
+@@ -624,15 +624,6 @@
+   loadOrder(CU.o).then(() => applySaved(CU.o));
  }
--fetch("themes.json").then((r) => r.json()).then((d) => { THEMES = d; fillThemes(); draw(); }).catch(() => {});
-+// themes.js (window.POSTER_THEMES, format objek) diubah ke format yang dipakai renderer ini
-+function fromThemesJs(src) {
-+  const out = { C: [] };
-+  Object.entries((src && src.C) || {}).forEach(([id, t]) => {
-+    const box = (b) => [b.cx, b.cy, b.w, b.h];
-+    const hs = t.labels.slice(0, 12).map((l) => l.h).sort((a, b) => a - b);
-+    out.C.push({
-+      id, nama: t.name, bg: t.bg, mask: t.mask, w: t.w, h: t.h,
-+      slots: t.slots.map((r) => [r.x, r.y, r.w, r.h]),
-+      labels: t.labels.map((l) => [l.cx, l.cy]),
-+      title: box(t.title), sub: box(t.sub), qr: t.qr,
-+      ink: t.title.color, txt: t.labels[0].color,
-+      labSize: Math.round(hs[hs.length >> 1] * 1.2), labBig: Math.round(t.labels[12].h * 1.2),
-+      tfont: /serif/i.test(t.tf) && !/sans-serif/i.test(t.tf.split(",")[0]) ? "serif" : "sans",
-+      sfont: /script|cursive/i.test(t.sf) ? "script" : "sans",
-+    });
-+  });
-+  return out;
-+}
-+if (window.POSTER_THEMES) { THEMES = fromThemesJs(window.POSTER_THEMES); fillThemes(); draw(); }
-+else fetch("themes.json").then((r) => r.json()).then((d) => { THEMES = d; fillThemes(); draw(); }).catch(() => {});
- $("theme").addEventListener("change", draw);
- Promise.all([document.fonts.load("600 40px Fredoka"), document.fonts.load("40px Pacifico")]).then(draw).catch(() => {});
  
+-// tautan ke template 12 bulan bayi (bayi.html), membawa order atau link pelanggan yang sama
+-(function () {
+-  const a = document.createElement("a");
+-  a.href = "bayi.html" + location.search;
+-  a.textContent = "Template 12 bulan bayi »";
+-  a.style.cssText = "display:block;margin:10px 2px 0;font-size:.9rem;color:#e58fae;font-weight:600";
+-  document.querySelector(".tabs").after(a);
+-})();
+-
+ // ================= Template C: 12 bulan bayi, tema bergambar (latar + posisi dari themes.json) =================
+ const FUN = '"Fredoka",system-ui,sans-serif', FUNS = '"Pacifico","Segoe Script",cursive';
+ let THEMES = { C: [] };
+@@ -695,10 +686,10 @@
+ }
+ function footerC(g) {
+   const T = themeC();
+-  g.fillStyle = "rgba(255,255,255,.82)"; rr(g, W / 2 - 290, H - 112, 580, 78, 22); g.fill();
+-  qrFancy(g, W / 2, H - 255, 110, false);
++  g.fillStyle = "rgba(255,255,255,.88)"; rr(g, W / 2 - 290, H - 88, 580, 70, 20); g.fill();
++  qrFancy(g, W / 2, H - 215, 104, false);
+   g.fillStyle = T ? T.ink : "#5b4033"; g.textAlign = "center"; g.textBaseline = "alphabetic"; g.font = `600 22px ${FUN}`;
+-  wrap(g, $("qrcap").value, 520).slice(0, 2).forEach((l, k) => g.fillText(l, W / 2, H - 76 + k * 28));
++  wrap(g, $("qrcap").value, 520).slice(0, 2).forEach((l, k) => g.fillText(l, W / 2, H - 56 + k * 26));
+ }
+ // themes.js (window.POSTER_THEMES, format objek) diubah ke format yang dipakai renderer ini
+ function fromThemesJs(src) {
