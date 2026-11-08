@@ -6,8 +6,8 @@
 <meta name="robots" content="noindex">
 <title>Template Poster AR</title>
 <script src="config.js"></script>
-<script src="themes.js"></script>
 <script src="tema-bayi.js"></script>
+<script src="themes.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <style>
   :root { --bg:#faf6f8; --card:#fff; --ink:#2b2030; --mute:#7a6d80; --pink:#e58fae; --line:#ece3e8; }
@@ -98,6 +98,13 @@ Memories</textarea>
   </div>
 </div>
 
+<script>
+window.addEventListener("error", function (e) {
+  var b = document.getElementById("errbar");
+  if (!b) { b = document.createElement("div"); b.id = "errbar"; b.style.cssText = "position:fixed;left:0;right:0;bottom:0;background:#b00020;color:#fff;padding:8px 10px;font:12px monospace;z-index:99999;white-space:pre-wrap"; document.body.appendChild(b); }
+  b.textContent = "Error: " + e.message + " (baris " + e.lineno + ")";
+});
+</script>
 <script>
 const W = 1200, $ = (id) => document.getElementById(id);
 let H = 1800;
@@ -449,8 +456,7 @@ function layoutB(g, top) {
 function render(g, S) {
   g.save();
   g.scale(S, S);
-  if (tpl === "C" && themedRender(g)) { g.restore(); return; }
-  applyPalette(); g.fillStyle = PALBG(); g.fillRect(0, 0, W, H);
+  g.fillStyle = tpl === "A" ? "#f1ece1" : "#ffffff"; g.fillRect(0, 0, W, H);
   if (tpl === "A") {
     blob(g, 0, 0, 260, 170, "rgba(214,196,170,.45)");
     blob(g, W, H, 300, 170, "rgba(214,196,170,.45)");
@@ -694,58 +700,30 @@ function footerC(g) {
   g.fillStyle = T ? T.ink : "#5b4033"; g.textAlign = "center"; g.textBaseline = "alphabetic"; g.font = `600 22px ${FUN}`;
   wrap(g, $("qrcap").value, 520).slice(0, 2).forEach((l, k) => g.fillText(l, W / 2, H - 76 + k * 28));
 }
-fetch("themes.json").then((r) => r.json()).then((d) => { THEMES = d; fillThemes(); draw(); }).catch(() => {});
+// themes.js (window.POSTER_THEMES, format objek) diubah ke format yang dipakai renderer ini
+function fromThemesJs(src) {
+  const out = { C: [] };
+  Object.entries((src && src.C) || {}).forEach(([id, t]) => {
+    const box = (b) => [b.cx, b.cy, b.w, b.h];
+    const hs = t.labels.slice(0, 12).map((l) => l.h).sort((a, b) => a - b);
+    out.C.push({
+      id, nama: t.name, bg: t.bg, mask: t.mask, w: t.w, h: t.h,
+      slots: t.slots.map((r) => [r.x, r.y, r.w, r.h]),
+      labels: t.labels.map((l) => [l.cx, l.cy]),
+      title: box(t.title), sub: box(t.sub), qr: t.qr,
+      ink: t.title.color, txt: t.labels[0].color,
+      labSize: Math.round(hs[hs.length >> 1] * 1.2), labBig: Math.round(t.labels[12].h * 1.2),
+      tfont: /serif/i.test(t.tf) && !/sans-serif/i.test(t.tf.split(",")[0]) ? "serif" : "sans",
+      sfont: /script|cursive/i.test(t.sf) ? "script" : "sans",
+    });
+  });
+  return out;
+}
+if (window.POSTER_THEMES) { THEMES = fromThemesJs(window.POSTER_THEMES); fillThemes(); draw(); }
+else fetch("themes.json").then((r) => r.json()).then((d) => { THEMES = d; fillThemes(); draw(); }).catch(() => {});
 $("theme").addEventListener("change", draw);
 Promise.all([document.fonts.load("600 40px Fredoka"), document.fonts.load("40px Pacifico")]).then(draw).catch(() => {});
 
-// ================= Tema berbasis gambar (themes.js): latar ilustrasi, foto dipotong mengikuti mask =================
-// Kalau themes.js atau gambar temanya tidak ada di repo, otomatis kembali ke tampilan lama.
-const THEME_IMG = {};
-function themeImg(src) {
-  if (!THEME_IMG[src]) {
-    const im = new Image();
-    im.onload = () => draw();
-    im.onerror = () => { im.failed = true; draw(); };
-    im.src = src;
-    THEME_IMG[src] = im;
-  }
-  return THEME_IMG[src];
-}
-function themedRender(g) {
-  const T = ((window.POSTER_THEMES || {}).C || {})[$("theme").value];
-  if (!T) return false;
-  const bg = themeImg(T.bg), mk = themeImg(T.mask);
-  if (bg.failed || mk.failed) return false;
-  if (!(bg.complete && bg.naturalWidth && mk.complete && mk.naturalWidth)) { g.fillStyle = "#fff"; g.fillRect(0, 0, W, H); return true; }
-  const k = W / T.w;
-  g.drawImage(bg, 0, 0, W, H);
-  const off = document.createElement("canvas");
-  off.width = W; off.height = H;
-  const o = off.getContext("2d");
-  T.slots.forEach((s, i) => { const it = items[i]; if (it && it.img) cover(o, it.img, s.x * k, s.y * k, s.w * k, s.h * k); });
-  o.globalCompositeOperation = "destination-in";
-  o.drawImage(mk, 0, 0, W, H);
-  g.drawImage(off, 0, 0);
-  g.textAlign = "center"; g.textBaseline = "middle";
-  T.slots.forEach((s, i) => {
-    if (items[i] && items[i].img) return;
-    g.fillStyle = "#b3aaa2"; g.font = `600 ${Math.max(14, s.w * k * .075)}px "Fredoka",system-ui,sans-serif`;
-    g.fillText("Ganti foto di sini", (s.x + s.w / 2) * k, (s.y + s.h / 2) * k);
-  });
-  const put = (txt, p, fam, size0, maxW, dy) => {
-    if (!p || !txt) return;
-    g.fillStyle = p.color; g.textAlign = "center"; g.textBaseline = "alphabetic";
-    const sz = fitText(g, txt, maxW, size0, fam, "600") || size0;
-    g.fillText(txt, p.cx * k, p.cy * k + sz * dy);
-  };
-  put(String($("title").value || "").toUpperCase(), T.title, T.tf, T.title.h * k / .72, T.title.w * k * 1.25, .36);
-  put(String($("sub").value || "").split("\n")[0].trim(), T.sub, T.sf, T.sub.h * k * .8, T.sub.w * k * 1.2, .15);
-  T.labels.forEach((p, i) => {
-    const s = T.slots[i];
-    put(items[i] ? items[i].cap : "", p, T.lf, s.w * k * (i === 12 ? .11 : .115), s.w * k * .8, .36);
-  });
-  const q = T.qr, cap = String($("qrcap").value || "").trim();
-  qrFancy(g, q.cx * k, (q.cy - q.size / 2) * k, q.size * k, false);
-  if (cap) {
-    g.font = `600 22px "Fredoka",system-ui,sans-serif`;
-    const ls = wrap(g, cap, 520).slice(0, 2), y0 = (q.cy + q.size / 2) * k + 56;
+</script>
+</body>
+</html>
