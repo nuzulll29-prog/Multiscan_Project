@@ -14,14 +14,20 @@
   .slot { background:#fff; border:1px solid var(--line); border-radius:14px; padding:12px; margin-bottom:10px; }
   .slot b { font-size:.9rem; }
   .pair { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:8px; }
-  .pick { aspect-ratio:3/4; border:1px dashed #cdbcc6; border-radius:10px; background:#f3e9ee; color:var(--mute); font:600 .85rem system-ui; padding:6px; overflow:hidden; word-break:break-all; }
+  .pick { position:relative; aspect-ratio:3/4; border:1px dashed #cdbcc6; border-radius:10px; background:#f3e9ee; color:var(--mute); font:600 .85rem system-ui; padding:6px; overflow:hidden; word-break:break-all; }
   .pick.ok { border-style:solid; border-color:var(--ok); color:var(--ink); }
-  .pick img { width:100%; height:100%; object-fit:cover; border-radius:6px; }
+  .pick img, .pick video { width:100%; height:100%; object-fit:cover; border-radius:6px; pointer-events:none; display:block; }
+  .pick .vn { position:absolute; left:6px; right:6px; bottom:6px; background:rgba(0,0,0,.55); color:#fff; font-size:.7rem; padding:3px 8px; border-radius:99px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
+  .play { width:100%; margin-top:6px; border:0; border-radius:10px; padding:9px; font:600 .85rem system-ui; background:#f3e9ee; color:var(--ink); }
+  .play[hidden] { display:none; }
   #go { width:100%; border:0; border-radius:12px; padding:15px; font:700 1rem system-ui; background:var(--pink); color:#fff; margin-top:6px; }
   #go:disabled { opacity:.5; }
   #bar { height:8px; background:#f0e6eb; border-radius:99px; overflow:hidden; margin:14px 0 8px; display:none; }
   #bar i { display:block; height:100%; width:0; background:var(--pink); transition:width .2s; }
   #msg { font-size:.9rem; line-height:1.5; }
+  #lb { position:fixed; inset:0; z-index:50; background:rgba(0,0,0,.92); display:none; flex-direction:column; align-items:center; justify-content:center; padding:16px; }
+  #lb video { max-width:100%; max-height:78vh; border-radius:8px; }
+  #lb button { position:absolute; top:14px; right:14px; border:0; border-radius:10px; padding:10px 14px; font:600 .9rem system-ui; background:rgba(255,255,255,.2); color:#fff; }
 </style>
 </head>
 <body>
@@ -32,6 +38,7 @@
 <button id="go" type="button">Kirim</button>
 <div id="bar"><i></i></div>
 <div id="msg"></div>
+<div id="lb"><button id="lbx" type="button">Tutup ✕</button><div id="lbBody"></div></div>
 
 <script>
 const WORKER_URL = "https://hana-multiscan.nuzulll-29.workers.dev"; // alamat Worker, tanpa / di akhir
@@ -40,7 +47,7 @@ const Q = new URLSearchParams(location.search), N = parseInt(Q.get("n"), 10) || 
 const AUTH = "o=" + encodeURIComponent(ORDER) + "&n=" + N + "&e=" + encodeURIComponent(Q.get("e") || "") + "&t=" + encodeURIComponent(Q.get("t") || "");
 const $ = (id) => document.getElementById(id), pad = (i) => String(i + 1).padStart(2, "0");
 const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const slots = Array.from({ length: N }, () => ({ photo: null, video: null, thumb: "", vn: "" }));
+const slots = Array.from({ length: N }, () => ({ photo: null, video: null, thumb: "", vn: "", vurl: "" }));
 const say = (t, c) => { $("msg").textContent = t; $("msg").style.color = c || "inherit"; };
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 async function retry(fn) { for (let t = 0; ; t++) { try { return await fn(); } catch (e) { if (t >= 2) throw e; await wait(1500 * (t + 1)); } } }
@@ -48,9 +55,20 @@ async function retry(fn) { for (let t = 0; ; t++) { try { return await fn(); } c
 function render() {
   $("slots").innerHTML = slots.map((s, i) => `<div class="slot"><b>Pasangan ${i + 1}</b><div class="pair">` +
     `<button class="pick ${s.photo ? "ok" : ""}" data-k="photo" data-i="${i}">${s.thumb ? `<img src="${s.thumb}" alt="" onerror="this.replaceWith('Foto dipilih')">` : "Pilih foto"}</button>` +
-    `<button class="pick ${s.video ? "ok" : ""}" data-k="video" data-i="${i}">${s.video ? "▶ " + esc(s.vn) : "Pilih video"}</button></div></div>`).join("");
+    `<button class="pick ${s.video ? "ok" : ""}" data-k="video" data-i="${i}">${s.video ? `<video src="${s.vurl}#t=0.1" preload="metadata" muted playsinline></video><span class="vn">▶ ${esc(s.vn)}</span>` : "Pilih video"}</button></div>` +
+    `<button type="button" class="play" data-play="${i}" ${s.video ? "" : "hidden"}>▶ Putar video</button></div>`).join("");
 }
 $("slots").addEventListener("click", (e) => {
+  const pl = e.target.closest("[data-play]");
+  if (pl) {
+    const s = slots[+pl.dataset.play];
+    if (!s.vurl) return;
+    const v = document.createElement("video");
+    v.src = s.vurl; v.controls = true; v.autoplay = true; v.playsInline = true;
+    $("lbBody").innerHTML = ""; $("lbBody").appendChild(v);
+    $("lb").style.display = "flex";
+    return;
+  }
   const b = e.target.closest(".pick");
   if (!b) return;
   const i = +b.dataset.i, k = b.dataset.k, inp = document.createElement("input");
@@ -61,12 +79,19 @@ $("slots").addEventListener("click", (e) => {
     try {
       const blob = new Blob([await f.arrayBuffer()], { type: f.type || (k === "photo" ? "image/jpeg" : "video/mp4") }); // dibaca sekarang supaya tidak gagal nanti
       if (k === "photo") { if (blob.size > 10 * 1048576) return say("Foto maksimal 10 MB.", "var(--bad)"); slots[i].photo = blob; slots[i].thumb = URL.createObjectURL(blob); }
-      else { if (blob.size > 100 * 1048576) return say("Video maksimal 100 MB.", "var(--bad)"); slots[i].video = blob; slots[i].vn = f.name; }
+      else {
+        if (blob.size > 100 * 1048576) return say("Video maksimal 100 MB.", "var(--bad)");
+        if (slots[i].vurl) URL.revokeObjectURL(slots[i].vurl);
+        slots[i].video = blob; slots[i].vn = f.name; slots[i].vurl = URL.createObjectURL(blob);
+      }
       say(""); render();
     } catch (_) { say("File tidak bisa dibaca. Coba pilih ulang dari folder Download.", "var(--bad)"); }
   };
   inp.click();
 });
+function closeLb() { const v = $("lbBody").querySelector("video"); if (v) v.pause(); $("lbBody").innerHTML = ""; $("lb").style.display = "none"; }
+$("lbx").onclick = closeLb;
+$("lb").addEventListener("click", (e) => { if (e.target === $("lb")) closeLb(); });
 
 async function api(path, body) {
   const r = await fetch(`${WORKER_URL}/c/${path}?${AUTH}`, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {});
