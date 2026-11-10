@@ -18,6 +18,7 @@
   .pick.ok { border-style:solid; border-color:var(--ok); color:var(--ink); }
   .pick img, .pick video { width:100%; height:100%; object-fit:cover; border-radius:6px; pointer-events:none; display:block; }
   .pick .vn { position:absolute; left:6px; right:6px; bottom:6px; background:rgba(0,0,0,.55); color:#fff; font-size:.7rem; padding:3px 8px; border-radius:99px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:left; }
+  .pick .chg { position:absolute; right:10px; top:10px; background:rgba(0,0,0,.45); color:#fff; font-size:.75rem; font-weight:600; padding:4px 10px; border-radius:99px; pointer-events:none; backdrop-filter:blur(2px); }
   .play { width:100%; margin-top:6px; border:0; border-radius:10px; padding:9px; font:600 .85rem system-ui; background:#f3e9ee; color:var(--ink); }
   .play[hidden] { display:none; }
   #go { width:100%; border:0; border-radius:12px; padding:15px; font:700 1rem system-ui; background:var(--pink); color:#fff; margin-top:6px; }
@@ -54,8 +55,8 @@ async function retry(fn) { for (let t = 0; ; t++) { try { return await fn(); } c
 
 function render() {
   $("slots").innerHTML = slots.map((s, i) => `<div class="slot"><b>Pasangan ${i + 1}</b><div class="pair">` +
-    `<button class="pick ${s.photo ? "ok" : ""}" data-k="photo" data-i="${i}">${s.thumb ? `<img src="${s.thumb}" alt="" onerror="this.replaceWith('Foto dipilih')">` : "Pilih foto"}</button>` +
-    `<button class="pick ${s.video ? "ok" : ""}" data-k="video" data-i="${i}">${s.video ? `<video src="${s.vurl}#t=0.1" preload="metadata" muted playsinline></video><span class="vn">▶ ${esc(s.vn)}</span>` : "Pilih video"}</button></div>` +
+    `<button class="pick ${s.photo ? "ok" : ""}" data-k="photo" data-i="${i}">${s.thumb ? `<img src="${s.thumb}" alt="" onerror="this.replaceWith('Foto dipilih')"><span class="chg">✎ Ubah</span>` : "Pilih foto"}</button>` +
+    `<button class="pick ${s.video ? "ok" : ""}" data-k="video" data-i="${i}">${s.video ? `<video src="${s.vurl}#t=0.1" preload="metadata" muted playsinline></video><span class="chg">✎ Ubah</span><span class="vn">▶ ${esc(s.vn)}</span>` : "Pilih video"}</button></div>` +
     `<button type="button" class="play" data-play="${i}" ${s.video ? "" : "hidden"}>▶ Putar video</button></div>`).join("");
 }
 $("slots").addEventListener("click", (e) => {
