@@ -1,1 +1,43 @@
+# Simpan sebagai: .github/workflows/compress.yml
+name: Compress HDR videos
 
+on:
+  workflow_dispatch:
+    inputs:
+      order_id:
+        description: "ID order (nama folder di R2: orders/<order_id>/)"
+        required: true
+        type: string
+
+# satu order diproses satu per satu; kalau ada video HDR baru masuk, jalan berikutnya menyusul
+concurrency:
+  group: compress-${{ inputs.order_id }}
+  cancel-in-progress: false
+
+jobs:
+  compress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Install S3 client
+        run: npm install --no-save @aws-sdk/client-s3
+
+      - name: Compress HDR videos
+        run: node compress-videos.mjs
+        env:
+          ORDER_ID: ${{ inputs.order_id }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
