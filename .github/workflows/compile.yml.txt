@@ -1,0 +1,39 @@
+# Simpan sebagai: .github/workflows/compile.yml
+name: Compile MindAR targets
+
+on:
+  workflow_dispatch:
+    inputs:
+      order_id:
+        description: "ID order (nama folder di R2: orders/<order_id>/)"
+        required: true
+        type: string
+
+jobs:
+  compile:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # library sistem yang dibutuhkan paket `canvas`
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Compile
+        run: node compile.js
+        env:
+          ORDER_ID: ${{ inputs.order_id }}
+          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}
