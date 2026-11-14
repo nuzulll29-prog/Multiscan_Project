@@ -1,5 +1,5 @@
-// Isi sekali saja. Alamat publik bucket R2 (r2.dev atau custom domain),
-// diawali https:// dan tanpa garis miring di akhir.
+// Isi sekali saja. Alamat dasar file AR dan video untuk halaman scan, tanpa garis miring di akhir.
+// Sekarang lewat Worker (/f), bukan langsung dari r2.dev yang diblokir sebagian operator.
 window.HM_CONFIG = {
-  r2Base: "https://pub-af8000a544674549b3e28589ff094f83.r2.dev"
+  r2Base: "https://hana-multiscan.nuzulll-29.workers.dev/f"
 };
