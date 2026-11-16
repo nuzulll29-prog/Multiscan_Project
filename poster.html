@@ -506,7 +506,7 @@ function setTpl(t) {
   $("tB").classList.toggle("on", t === "B");
   $("tC").classList.toggle("on", t === "C");
   $("calBox").style.display = t === "A" ? "block" : "none";
-  fillThemes(t); $("themeBox").style.display = "block";
+  fillThemes(t); $("themeBox").style.display = t === "C" ? "block" : "none"; // tema hanya untuk 12 bulan bayi
   $("side").previousElementSibling.style.display = $("side").style.display = t === "A" ? "" : "none";
   buildItems();
   draw();
