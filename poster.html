@@ -46,6 +46,7 @@
     <button id="tA" class="on" type="button">Galeri + kalender</button>
     <button id="tB" type="button">Linimasa cerita</button>
     <button id="tC" type="button">12 bulan bayi</button>
+    <button id="tD" type="button">Tanpa template</button>
   </div>
   <label for="n">Jumlah foto (1–24)</label>
   <input id="n" type="number" min="1" max="24" value="12" inputmode="numeric">
@@ -63,6 +64,8 @@ Memories</textarea>
   <textarea id="foot">Terima kasih sudah menjadi bagian dari perjalanan ini</textarea>
   <label for="qrcap">Teks di dekat QR</label>
   <input id="qrcap" value="Scan QR untuk melihat video kenangan perjalanan ini">
+  <label for="qrsub" id="qrsubL">Keterangan kecil di bawah tulisan scan</label>
+  <input id="qrsub" value="untuk melihat video kenangan" style="display:none">
   <label for="link">Link QR (dari halaman upload)</label>
   <input id="link" placeholder="https://.../index.html?order=HM001" inputmode="url">
   <p class="hint">Foto di poster harus sama dengan foto yang diunggah sebagai target AR, dengan urutan yang sama.</p>
@@ -89,6 +92,24 @@ Memories</textarea>
 
 <div class="card">
   <canvas id="cv" width="1200" height="1800"></canvas>
+  <div class="row">
+    <select id="ps" aria-label="Ukuran cetak">
+      <option value="">Ukuran cetak: sesuai desain</option>
+      <option value="13x18">5R (13 × 18 cm)</option>
+      <option value="15x20">6R (15 × 20 cm)</option>
+      <option value="14.8x21">A5 (14,8 × 21 cm)</option>
+      <option value="20x25">8R (20 × 25 cm)</option>
+      <option value="20x30">20 × 30 cm</option>
+      <option value="21x29.7">A4 (21 × 29,7 cm)</option>
+      <option value="custom">Ukuran kustom…</option>
+    </select>
+  </div>
+  <div class="row" id="customRow" style="display:none">
+    <input id="pwcm" type="number" inputmode="decimal" min="5" max="30" step="0.1" placeholder="Lebar (cm)" value="20">
+    <span>×</span>
+    <input id="phcm" type="number" inputmode="decimal" min="5" max="30" step="0.1" placeholder="Tinggi (cm)" value="30">
+  </div>
+  <p class="hint" id="psInfo"></p>
   <div class="row">
     <select id="q">
       <option value="1">1200 × 1800 (cepat)</option>
@@ -122,6 +143,7 @@ const count = () => tpl === "C" ? 13 : Math.min(24, Math.max(1, parseInt($("n").
 const YEARS = [2015, 2017, 2018, 2019, 2021], LABELS = ["Met & fell in love", "Engaged", "Married", "It's a boy", "Baby girl"];
 const BULAN = ["Baru Lahir", "1 bulan", "2 bulan", "3 bulan", "4 bulan", "5 bulan", "6 bulan", "7 bulan", "8 bulan", "9 bulan", "10 bulan", "11 bulan", "1 Tahun"];
 function textFor(i) {
+  if (tpl === "D") return { cap: "", desc: "" };
   if (tpl === "C") return { cap: BULAN[i] || "Foto " + (i + 1), desc: "" };
   if (tpl === "A") { const d = p2(i % 12 + 1); return { cap: d + "." + d + ".2024", desc: "" }; }
   return { cap: String(i < 5 ? YEARS[i] : 2021 + (i - 4)), desc: i < 5 ? LABELS[i] : "Momen " + (i + 1) };
@@ -153,6 +175,7 @@ function buildItems() {
     c.placeholder = tpl === "B" ? "Tahun" : "Tanggal atau keterangan";
     c.oninput = () => { it.cap = c.value; it.auto = false; draw(); };
     f.appendChild(c);
+    if (tpl === "D") { d.append(b); box.appendChild(d); return; }
     if (tpl === "B") {
       const t = document.createElement("input");
       t.value = it.desc;
@@ -309,6 +332,7 @@ function card(g, x, y, w, h) {
 
 // ---------- header dan footer ----------
 function header(g) {
+  if (tpl === "D") return 0;
   g.fillStyle = INK; g.textAlign = "center"; g.textBaseline = "alphabetic";
   const t = $("title").value || " ";
   if (tpl === "C") return headerC(g, t);
@@ -361,8 +385,55 @@ function qrFancy(g, cx, y, sz, deco) {
   if (deco) { g.fillStyle = "#c4a994"; heart(g, x - 66, y + sz / 2, 26); g.fill(); heart(g, x + sz + 66, y + sz / 2, 26); g.fill(); }
 }
 
+// ---- Tanpa template: hanya foto polos + QR di pojok kanan bawah ----
+const DM = 50, DQ = 150, DB = 180, DC = 100; // margin, sisi QR, sisi kotak putih QR, tinggi baris teks di bawah QR
+function layoutD(g) {
+  const n = items.length, gap = 24, bw = W - 2 * DM, bh = H - DM - (DM + DB + DC + 30), ar = 4 / 3; // sel foto 3:4
+  let best = { s: 0, c: 1 };
+  for (let c = 1; c <= Math.min(n, 6); c++) {
+    const r = Math.ceil(n / c), s = Math.min((bw - gap * (c - 1)) / c, ((bh - gap * (r - 1)) / r) / ar);
+    if (s > best.s) best = { s, c };
+  }
+  const c = best.c, s = Math.min(best.s, 560), r = Math.ceil(n / c), ch = s * ar;
+  const y0 = DM + (bh - (r * ch + (r - 1) * gap)) / 2;
+  items.forEach((it, i) => {
+    const row = Math.floor(i / c), inRow = Math.min(c, n - row * c);
+    const x = DM + (bw - (inRow * s + (inRow - 1) * gap)) / 2 + (i % c) * (s + gap), y = y0 + row * (ch + gap);
+    g.save();
+    rr(g, x, y, s, ch, 12); g.clip();
+    if (it.img) cover(g, it.img, x, y, s, ch);
+    else {
+      g.fillStyle = "#e6e6e9"; g.fillRect(x, y, s, ch);
+      g.fillStyle = "#8d8d93"; g.font = Math.max(16, s * 0.08) + "px " + BODY; g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText("Foto " + (i + 1), x + s / 2, y + ch / 2);
+    }
+    g.restore();
+  });
+}
+function footerD(g) {
+  const bx = W - DM - DB, by = H - DM - DC - DB, qx = bx + (DB - DQ) / 2, qy = by + (DB - DQ) / 2;
+  g.fillStyle = "#fff"; g.fillRect(bx, by, DB, DB);
+  g.strokeStyle = "#dcdcdf"; g.lineWidth = 2; g.strokeRect(bx, by, DB, DB);
+  if (qrCv) g.drawImage(qrCv, qx, qy, DQ, DQ);
+  else { g.fillStyle = "#999"; g.font = "26px " + BODY; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("QR", bx + DB / 2, by + DB / 2); }
+  // tulisan scan tepat di bawah QR, rata tengah: judul tebal + keterangan kecil (otomatis turun ke baris berikutnya kalau panjang)
+  const head = String($("qrcap").value).replace(/\s+/g, " ").trim(), sub = String($("qrsub").value).replace(/\s+/g, " ").trim();
+  const maxW = DB + 2 * (DM - 14), cx = bx + DB / 2;
+  g.textBaseline = "alphabetic"; g.textAlign = "center"; g.fillStyle = "#5a4a5e";
+  let y = by + DB + 36;
+  if (head) {
+    const sz = fitText(g, head, maxW, 32, BODY, "600");
+    g.fillText(head, cx, y); y += Math.round(sz * 0.95) + 4;
+  }
+  if (sub) {
+    g.font = "22px " + BODY; g.fillStyle = "#6e6072";
+    wrap(g, sub, maxW).slice(0, 2).forEach((l, k) => g.fillText(l, cx, y + k * 27));
+  }
+}
+
 function footer(g) {
   g.textBaseline = "alphabetic";
+  if (tpl === "D") return footerD(g);
   if (tpl === "C") return footerC(g);
   if (tpl === "A") {
     flowers(g, 60, H - 40);
@@ -453,9 +524,66 @@ function layoutB(g, top) {
   });
 }
 
+// ---- ukuran cetak: desain (W x H) diletakkan di tengah halaman; kalau rasio halaman beda, sisanya jadi margin polos ----
+let PWd = W, PHd = H, PX = 0, PY = 0; // ukuran halaman dan posisi desain, dalam satuan desain
+const MARG = {};
+function pageCm() {
+  const v = $("ps").value;
+  if (!v) return null;
+  if (v === "custom") {
+    const w = parseFloat($("pwcm").value), h = parseFloat($("phcm").value);
+    return w >= 5 && w <= 30 && h >= 5 && h <= 30 ? [w, h] : null;
+  }
+  return v.split("x").map(Number);
+}
+function marginColor() {
+  if (tpl === "A") return "#f1ece1";
+  if (tpl !== "C") return "#ffffff";
+  const T = themeC();
+  if (!T) return "#f8f1e4";
+  if (MARG[T.id]) return MARG[T.id];
+  const im = bgOf(T);
+  if (!(im.complete && im.naturalWidth)) return "#f8f1e4";
+  try { // warna tengah sisi kiri dan kanan gambar latar (median supaya daun tidak ikut)
+    const w = im.naturalWidth, h = im.naturalHeight, c = document.createElement("canvas");
+    c.width = 4; c.height = 40;
+    const g = c.getContext("2d");
+    g.drawImage(im, 0, h * 0.3, 2, h * 0.4, 0, 0, 2, 40);
+    g.drawImage(im, w - 2, h * 0.3, 2, h * 0.4, 2, 0, 2, 40);
+    const d = g.getImageData(0, 0, 4, 40).data, ch = [[], [], []];
+    for (let i = 0; i < d.length; i += 4) for (let k = 0; k < 3; k++) ch[k].push(d[i + k]);
+    const med = ch.map((a) => a.sort((x, y) => x - y)[a.length >> 1]);
+    return (MARG[T.id] = `rgb(${med[0]},${med[1]},${med[2]})`);
+  } catch (_) { return "#f8f1e4"; }
+}
+function applyPage() {
+  const cm = pageCm();
+  PWd = W; PHd = H;
+  if (cm) {
+    const asp = cm[0] / cm[1];
+    if (asp < W / H) PHd = Math.round(W / asp); else PWd = Math.round(H * asp);
+  }
+  PX = (PWd - W) / 2; PY = (PHd - H) / 2;
+  $("cv").width = PWd; $("cv").height = PHd;
+  $("customRow").style.display = $("ps").value === "custom" ? "flex" : "none";
+  const q = $("q"), dpi = (px) => cm ? Math.round(px / (Math.max(cm[0], cm[1]) / 2.54)) : 0;
+  q.options[0].textContent = `${PWd} × ${PHd} px (cepat)`;
+  q.options[1].textContent = `${PWd * 2} × ${PHd * 2} px (cetak${cm ? ", ±" + dpi(Math.max(PWd, PHd) * 2) + " dpi" : ""})`;
+  const margin = PWd !== W || PHd !== H;
+  $("psInfo").textContent = !cm ? ""
+    : (margin ? "Rasio kertas berbeda dari desain: desain diletakkan di tengah dan sisanya diberi margin polos. " : "Rasio kertas sama dengan desain, tanpa margin. ")
+      + `Ukuran file mengikuti pilihan di bawah (${cm[0]} × ${cm[1]} cm).`;
+  draw();
+}
+
 function render(g, S) {
   g.save();
   g.scale(S, S);
+  if (PWd !== W || PHd !== H) {
+    g.fillStyle = marginColor(); g.fillRect(0, 0, PWd, PHd);
+    g.translate(PX, PY);
+    g.beginPath(); g.rect(0, 0, W, H); g.clip();
+  }
   g.fillStyle = tpl === "A" ? "#f1ece1" : "#ffffff"; g.fillRect(0, 0, W, H);
   if (tpl === "A") {
     blob(g, 0, 0, 260, 170, "rgba(214,196,170,.45)");
@@ -463,7 +591,7 @@ function render(g, S) {
   }
   if (tpl === "C") botanical(g);
   const top = header(g);
-  if (tpl === "A") layoutA(g, top); else if (tpl === "C") layoutC(g, top); else layoutB(g, top);
+  if (tpl === "A") layoutA(g, top); else if (tpl === "C") layoutC(g, top); else if (tpl === "D") layoutD(g); else layoutB(g, top);
   footer(g);
   g.restore();
 }
@@ -492,6 +620,7 @@ const DEF = {
        foot: "Terima kasih sudah menjadi bagian dari perjalanan ini", qrcap: "Scan QR untuk melihat video kenangan perjalanan ini" },
   B: { n: "5", title: "Our Love Story", sub: "", foot: "Kate & Oliver", qrcap: "Scan untuk melihat video kenangan" },
   C: { n: "13", title: "ATHARV", sub: "tahun pertamaku", foot: "", qrcap: "Scan untuk melihat video bulan demi bulan" },
+  D: { n: "12", title: "", sub: "", foot: "", qrcap: "Scan Me" },
 };
 function setTpl(t) {
   const old = tpl;
@@ -499,37 +628,43 @@ function setTpl(t) {
   tpl = t;
   H = t === "B" ? 1600 : 1800;
   if (t === "C") $("n").value = "13";
-  $("cv").height = H;
   items.forEach((it, i) => { if (it.auto) Object.assign(it, textFor(i)); });
   sync();
   $("tA").classList.toggle("on", t === "A");
   $("tB").classList.toggle("on", t === "B");
   $("tC").classList.toggle("on", t === "C");
+  $("tD").classList.toggle("on", t === "D");
+  $("qrsub").style.display = $("qrsubL").style.display = t === "D" ? "" : "none";
+  ["title", "sub", "foot"].forEach((id) => { const on = t !== "D"; $(id).style.display = on ? "" : "none"; const l = $(id).previousElementSibling; if (l && l.tagName === "LABEL") l.style.display = on ? "" : "none"; });
   $("calBox").style.display = t === "A" ? "block" : "none";
   fillThemes(t); $("themeBox").style.display = t === "C" ? "block" : "none"; // tema hanya untuk 12 bulan bayi
   $("side").previousElementSibling.style.display = $("side").style.display = t === "A" ? "" : "none";
   buildItems();
-  draw();
+  applyPage();
 }
 
-["title", "sub", "side", "foot", "qrcap", "ctitle", "cmonth", "cday", "calOn"].forEach((id) => $(id).addEventListener("input", draw));
+["title", "sub", "side", "foot", "qrcap", "qrsub", "ctitle", "cmonth", "cday", "calOn"].forEach((id) => $(id).addEventListener("input", draw));
 $("calOn").addEventListener("change", draw);
 $("link").addEventListener("input", makeQR);
 $("n").addEventListener("input", () => { sync(); buildItems(); draw(); });
 $("tA").onclick = () => setTpl("A");
 $("tB").onclick = () => setTpl("B");
 $("tC").onclick = () => setTpl("C");
-const TPLNAME = { A: "galeri", B: "linimasa", C: "bayi" };
+$("tD").onclick = () => setTpl("D");
+["ps", "pwcm", "phcm"].forEach((id) => $(id).addEventListener("input", applyPage));
+$("ps").addEventListener("change", applyPage);
+const TPLNAME = { A: "galeri", B: "linimasa", C: "bayi", D: "polos" };
 function renderPng() {
   const S = +$("q").value, c = document.createElement("canvas");
-  c.width = W * S; c.height = H * S;
+  c.width = PWd * S; c.height = PHd * S;
   render(c.getContext("2d"), S);
   return new Promise((ok) => c.toBlob(ok, "image/png"));
 }
 // nama file = template (+ tema untuk 12 bulan bayi) + ID pesanan
 function posterName(order) {
   const th = tpl === "C" && $("theme").value ? "-" + $("theme").value : "";
-  return ("poster-" + TPLNAME[tpl] + th + "-" + order).replace(/[^A-Za-z0-9_-]/g, "");
+  const cm = pageCm(), sz = cm ? "-" + cm.map((x) => String(x).replace(".", "_")).join("x") + "cm" : "";
+  return ("poster-" + TPLNAME[tpl] + th + "-" + order + sz).replace(/[^A-Za-z0-9_-]/g, "");
 }
 function orderId() {
   let o = (typeof CU !== "undefined" && CU.o) || ORDER || "";
@@ -584,7 +719,7 @@ async function loadOrder(order) {
   draw();
 }
 const Q = new URLSearchParams(location.search), ORDER = Q.get("order");
-if (["B", "C"].includes(Q.get("t"))) setTpl(Q.get("t"));
+if (["B", "C", "D"].includes(Q.get("t"))) setTpl(Q.get("t"));
 if (ORDER) {
   $("link").value = Q.get("link") || "https://hana-multiscan.nuzulll-29.workers.dev/s/" + encodeURIComponent(ORDER);
   makeQR();
@@ -599,7 +734,7 @@ const AUTHQ = "o=" + encodeURIComponent(CU.o) + "&n=" + encodeURIComponent(CU.n)
 
 function collect() {
   const v = (id) => $(id).value;
-  return { tpl, theme: $("theme").value, title: v("title"), sub: v("sub"), side: v("side"), foot: v("foot"), qrcap: v("qrcap"),
+  return { tpl, theme: $("theme").value, title: v("title"), sub: v("sub"), side: v("side"), foot: v("foot"), qrcap: v("qrcap"), qrsub: v("qrsub"),
     calOn: $("calOn").checked, ctitle: v("ctitle"), cmonth: v("cmonth"), cday: v("cday"),
     items: items.slice(0, count()).map(({ img, url, ...rest }) => rest) };
 }
@@ -607,7 +742,7 @@ function applySettings(s) {
   if (!s || !s.items) return;
   if (s.tpl === "C") { location.replace("bayi.html" + location.search); return; }
   if (s.tpl && s.tpl !== tpl) setTpl(s.tpl);
-  ["title", "sub", "side", "foot", "qrcap", "ctitle", "cmonth", "cday"].forEach((k) => { if (s[k] != null) $(k).value = s[k]; });
+  ["title", "sub", "side", "foot", "qrcap", "qrsub", "ctitle", "cmonth", "cday"].forEach((k) => { if (s[k] != null) $(k).value = s[k]; });
   if (s.calOn != null) $("calOn").checked = s.calOn;
   if (s.theme) $("theme").value = s.theme;
   s.items.forEach((it, i) => { if (items[i]) Object.assign(items[i], it); });
@@ -630,6 +765,7 @@ if (CUST) {
   const hide = (id) => { const el = $(id); el.style.display = "none"; const l = el.previousElementSibling; if (l && l.tagName === "LABEL") l.style.display = "none"; };
   ["link", "n"].forEach(hide);
   $("dl").parentNode.style.display = "none";
+  $("ps").parentNode.style.display = $("customRow").style.display = $("psInfo").style.display = "none";
   pick = function () {};
   $("link").value = WORKER_URL + "/s/" + encodeURIComponent(CU.o);
   makeQR();
