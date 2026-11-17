@@ -77,13 +77,12 @@ Memories</textarea>
     <textarea id="gtext" placeholder="Ketik ucapan, mis. Happy Birthday" rows="2"></textarea>
     <div class="row" style="margin-top:8px">
       <select id="gfont" aria-label="Font ucapan"></select>
-      <select id="gsize" aria-label="Ukuran ucapan">
-        <option value="0">Ukuran: otomatis</option>
-        <option value="40">Kecil</option>
-        <option value="64">Sedang</option>
-        <option value="96">Besar</option>
-        <option value="140">Sangat besar</option>
-      </select>
+    </div>
+    <label class="chk" style="margin-top:10px"><input type="checkbox" id="gauto" checked> Ukuran otomatis (sebesar mungkin)</label>
+    <div class="row" style="margin-top:8px">
+      <input id="gsr" type="range" min="20" max="200" step="2" value="64" aria-label="Geser ukuran" style="padding:0">
+      <input id="gsize" type="number" min="16" max="400" step="1" value="64" inputmode="numeric" aria-label="Ukuran angka" style="flex:none;width:90px">
+
     </div>
     <div class="row" style="margin-top:8px">
       <select id="galign" aria-label="Rata teks">
@@ -101,7 +100,7 @@ Memories</textarea>
         <option value="#9b2c3c">Merah marun</option>
       </select>
     </div>
-    <p class="hint">Hanya tampil kalau "QR di atas foto" tidak dicentang. Teks otomatis turun baris dan mengecil kalau terlalu panjang.</p>
+    <p class="hint">Hanya tampil kalau "QR di atas foto" tidak dicentang. Teks otomatis turun baris dan mengecil kalau angka ukuran terlalu besar untuk area.</p>
   </div>
   <label for="link">Link QR (dari halaman upload)</label>
   <input id="link" placeholder="https://.../index.html?order=HM001" inputmode="url">
@@ -482,7 +481,11 @@ function gInit() {
   $("gfont").innerHTML = GFONTS.map((f) => `<option value="${f.id}" style="font-family:${f.fam}">${f.label}</option>`).join("");
   $("gChips").innerHTML = GPRESETS.map((t) => `<button type="button" class="chip">${t}</button>`).join("");
   $("gChips").addEventListener("click", (e) => { const b = e.target.closest(".chip"); if (!b) return; $("gtext").value = b.textContent; draw(); });
-  ["gtext", "gsize", "galign", "gcolor"].forEach((id) => { $(id).addEventListener("input", draw); $(id).addEventListener("change", draw); });
+  ["gtext", "galign", "gcolor", "gauto"].forEach((id) => { $(id).addEventListener("input", draw); $(id).addEventListener("change", draw); });
+  const gSync = () => { $("gsr").disabled = $("gsize").disabled = $("gauto").checked; };
+  $("gsr").addEventListener("input", () => { $("gsize").value = $("gsr").value; draw(); });
+  $("gsize").addEventListener("input", () => { $("gsr").value = $("gsize").value; draw(); });
+  $("gauto").addEventListener("change", gSync); gSync();
   $("gfont").addEventListener("change", gLoad);
   $("gfont").addEventListener("input", gLoad);
   GFONTS.forEach((f) => document.fonts.load(f.w + " 40px " + f.fam.split(",")[0]).then(draw).catch(() => {}));
@@ -493,7 +496,7 @@ function greetingD(g, bx, by) {
   if (!txt || $("qrOver").checked) return;
   const x0 = DM + 6, x1 = bx - 30, maxW = x1 - x0, zoneH = DB + DC;
   if (maxW < 120) return;
-  const f = gFont(), fixed = parseInt($("gsize").value, 10) || 0, align = $("galign").value;
+  const f = gFont(), fixed = $("gauto").checked ? 0 : Math.max(16, parseInt($("gsize").value, 10) || 64), align = $("galign").value;
   let sz = fixed || 160, lines = [];
   for (; sz >= 16; sz -= 2) {
     g.font = f.w + " " + sz + "px " + f.fam;
@@ -865,7 +868,7 @@ const AUTHQ = "o=" + encodeURIComponent(CU.o) + "&n=" + encodeURIComponent(CU.n)
 function collect() {
   const v = (id) => $(id).value;
   return { tpl, theme: $("theme").value, title: v("title"), sub: v("sub"), side: v("side"), foot: v("foot"), qrcap: v("qrcap"), qrsub: v("qrsub"),
-    gtext: v("gtext"), gfont: v("gfont"), gsize: v("gsize"), galign: v("galign"), gcolor: v("gcolor"),
+    gtext: v("gtext"), gfont: v("gfont"), gsize: v("gsize"), gauto: $("gauto").checked, galign: v("galign"), gcolor: v("gcolor"),
     calOn: $("calOn").checked, ctitle: v("ctitle"), cmonth: v("cmonth"), cday: v("cday"),
     items: items.slice(0, count()).map(({ img, url, ...rest }) => rest) };
 }
@@ -874,7 +877,8 @@ function applySettings(s) {
   if (s.tpl === "C") { location.replace("bayi.html" + location.search); return; }
   if (s.tpl && s.tpl !== tpl) setTpl(s.tpl);
   ["title", "sub", "side", "foot", "qrcap", "qrsub", "ctitle", "cmonth", "cday"].forEach((k) => { if (s[k] != null) $(k).value = s[k]; });
-  ["gtext", "gfont", "gsize", "galign", "gcolor"].forEach((k) => { if (s[k] != null) $(k).value = s[k]; });
+  ["gtext", "gfont", "galign", "gcolor"].forEach((k) => { if (s[k] != null) $(k).value = s[k]; });
+  { const n = parseInt(s.gsize, 10); if (n > 0) { $("gsize").value = n; $("gsr").value = n; } $("gauto").checked = s.gauto != null ? !!s.gauto : !(n > 0); $("gauto").dispatchEvent(new Event("change")); }
   gLoad();
   if (s.calOn != null) $("calOn").checked = s.calOn;
   if (s.theme) $("theme").value = s.theme;
