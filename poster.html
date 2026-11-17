@@ -103,6 +103,10 @@ Memories</textarea>
       <option value="21x29.7">A4 (21 × 29,7 cm)</option>
       <option value="custom">Ukuran kustom…</option>
     </select>
+    <select id="po" aria-label="Orientasi" style="display:none">
+      <option value="p">Potret ▯</option>
+      <option value="l">Lanskap ▭</option>
+    </select>
   </div>
   <div class="row" id="customRow" style="display:none">
     <input id="pwcm" type="number" inputmode="decimal" min="5" max="30" step="0.1" placeholder="Lebar (cm)" value="20">
@@ -110,6 +114,7 @@ Memories</textarea>
     <input id="phcm" type="number" inputmode="decimal" min="5" max="30" step="0.1" placeholder="Tinggi (cm)" value="30">
   </div>
   <p class="hint" id="psInfo"></p>
+  <label id="qrOverL" style="display:none"><input type="checkbox" id="qrOver"> QR di atas foto (foto memenuhi seluruh kertas)</label>
   <div class="row">
     <select id="q">
       <option value="1">1200 × 1800 (cepat)</option>
@@ -386,39 +391,43 @@ function qrFancy(g, cx, y, sz, deco) {
 }
 
 // ---- Tanpa template: hanya foto polos + QR di pojok kanan bawah ----
-const DM = 50, DQ = 150, DB = 180, DC = 100; // margin, sisi QR, sisi kotak putih QR, tinggi baris teks di bawah QR
+const DM = 28, DQ = 150, DB = 180, DC = 100; // margin aman, sisi QR, sisi kotak putih QR, tinggi tulisan di bawah QR
 function layoutD(g) {
-  const n = items.length, gap = 24, bw = W - 2 * DM, bh = H - DM - (DM + DB + DC + 30), ar = 4 / 3; // sel foto 3:4
-  let best = { s: 0, c: 1 };
-  for (let c = 1; c <= Math.min(n, 6); c++) {
-    const r = Math.ceil(n / c), s = Math.min((bw - gap * (c - 1)) / c, ((bh - gap * (r - 1)) / r) / ar);
-    if (s > best.s) best = { s, c };
+  const over = $("qrOver").checked, n = items.length, gap = 10;
+  const bw = PWd - 2 * DM, bh = over ? PHd - 2 * DM : PHd - DM - (DM + DB + DC + 16); // tanpa "QR di atas foto", sisakan baris untuk QR
+  const target = PHd >= PWd ? 4 / 3 : 3 / 4; // sel foto sedekat mungkin ke 3:4 (potret) / 4:3 (lanskap)
+  let best = null;
+  for (let c = 1; c <= n; c++) {
+    const r = Math.ceil(n / c), cw = (bw - gap * (c - 1)) / c, chh = (bh - gap * (r - 1)) / r;
+    if (cw < 60 || chh < 60) continue;
+    const cost = Math.abs(Math.log(chh / cw / target)) + 0.1 * (c * r - n);
+    if (!best || cost < best.cost) best = { c, cost };
   }
-  const c = best.c, s = Math.min(best.s, 560), r = Math.ceil(n / c), ch = s * ar;
-  const y0 = DM + (bh - (r * ch + (r - 1) * gap)) / 2;
+  const c = best ? best.c : Math.min(n, 6), r = Math.ceil(n / c), ch = (bh - gap * (r - 1)) / r;
   items.forEach((it, i) => {
-    const row = Math.floor(i / c), inRow = Math.min(c, n - row * c);
-    const x = DM + (bw - (inRow * s + (inRow - 1) * gap)) / 2 + (i % c) * (s + gap), y = y0 + row * (ch + gap);
+    const row = Math.floor(i / c), inRow = row === r - 1 ? n - row * c : c; // baris terakhir direntangkan supaya kertas tetap penuh
+    const cw = (bw - gap * (inRow - 1)) / inRow, x = DM + (i - row * c) * (cw + gap), y = DM + row * (ch + gap);
     g.save();
-    rr(g, x, y, s, ch, 12); g.clip();
-    if (it.img) cover(g, it.img, x, y, s, ch);
+    rr(g, x, y, cw, ch, 10); g.clip();
+    if (it.img) cover(g, it.img, x, y, cw, ch);
     else {
-      g.fillStyle = "#e6e6e9"; g.fillRect(x, y, s, ch);
-      g.fillStyle = "#8d8d93"; g.font = Math.max(16, s * 0.08) + "px " + BODY; g.textAlign = "center"; g.textBaseline = "middle";
-      g.fillText("Foto " + (i + 1), x + s / 2, y + ch / 2);
+      g.fillStyle = "#e6e6e9"; g.fillRect(x, y, cw, ch);
+      g.fillStyle = "#8d8d93"; g.font = Math.max(16, Math.min(cw, ch) * 0.08) + "px " + BODY; g.textAlign = "center"; g.textBaseline = "middle";
+      g.fillText("Foto " + (i + 1), x + cw / 2, y + ch / 2);
     }
     g.restore();
   });
 }
 function footerD(g) {
-  const bx = W - DM - DB, by = H - DM - DC - DB, qx = bx + (DB - DQ) / 2, qy = by + (DB - DQ) / 2;
+  const bx = PWd - DM - DB, by = PHd - DM - DC - DB, qx = bx + (DB - DQ) / 2, qy = by + (DB - DQ) / 2;
+  if ($("qrOver").checked) { g.fillStyle = "#fff"; rr(g, bx - 14, by - 14, DB + 28, DB + DC + 20, 14); g.fill(); } // kartu putih di atas foto
   g.fillStyle = "#fff"; g.fillRect(bx, by, DB, DB);
   g.strokeStyle = "#dcdcdf"; g.lineWidth = 2; g.strokeRect(bx, by, DB, DB);
   if (qrCv) g.drawImage(qrCv, qx, qy, DQ, DQ);
   else { g.fillStyle = "#999"; g.font = "26px " + BODY; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText("QR", bx + DB / 2, by + DB / 2); }
   // tulisan scan tepat di bawah QR, rata tengah: judul tebal + keterangan kecil (otomatis turun ke baris berikutnya kalau panjang)
   const head = String($("qrcap").value).replace(/\s+/g, " ").trim(), sub = String($("qrsub").value).replace(/\s+/g, " ").trim();
-  const maxW = DB + 2 * (DM - 14), cx = bx + DB / 2;
+  const maxW = DB + 24, cx = bx + DB / 2;
   g.textBaseline = "alphabetic"; g.textAlign = "center"; g.fillStyle = "#5a4a5e";
   let y = by + DB + 36;
   if (head) {
@@ -558,19 +567,27 @@ function marginColor() {
 }
 function applyPage() {
   const cm = pageCm();
-  PWd = W; PHd = H;
-  if (cm) {
-    const asp = cm[0] / cm[1];
-    if (asp < W / H) PHd = Math.round(W / asp); else PWd = Math.round(H * asp);
+  if (tpl === "D") { // Tanpa template: halaman = kertas itu sendiri (sesuai ukuran dan orientasi), foto memenuhi seluruh halaman
+    let a = cm ? cm[0] / cm[1] : 2 / 3;
+    if (($("po").value === "l") !== (a > 1)) a = 1 / a;
+    if (a <= 1) { PHd = 1800; PWd = Math.round(1800 * a); } else { PWd = 1800; PHd = Math.round(1800 / a); }
+    PX = PY = 0;
+  } else {
+    PWd = W; PHd = H;
+    if (cm) {
+      const asp = cm[0] / cm[1];
+      if (asp < W / H) PHd = Math.round(W / asp); else PWd = Math.round(H * asp);
+    }
+    PX = (PWd - W) / 2; PY = (PHd - H) / 2;
   }
-  PX = (PWd - W) / 2; PY = (PHd - H) / 2;
   $("cv").width = PWd; $("cv").height = PHd;
   $("customRow").style.display = $("ps").value === "custom" ? "flex" : "none";
   const q = $("q"), dpi = (px) => cm ? Math.round(px / (Math.max(cm[0], cm[1]) / 2.54)) : 0;
   q.options[0].textContent = `${PWd} × ${PHd} px (cepat)`;
   q.options[1].textContent = `${PWd * 2} × ${PHd * 2} px (cetak${cm ? ", ±" + dpi(Math.max(PWd, PHd) * 2) + " dpi" : ""})`;
-  const margin = PWd !== W || PHd !== H;
+  const margin = tpl !== "D" && (PWd !== W || PHd !== H);
   $("psInfo").textContent = !cm ? ""
+    : tpl === "D" ? `Foto disusun memenuhi seluruh kertas, mengikuti ukuran dan orientasi yang dipilih (${cm[0]} × ${cm[1]} cm).`
     : (margin ? "Rasio kertas berbeda dari desain: desain diletakkan di tengah dan sisanya diberi margin polos. " : "Rasio kertas sama dengan desain, tanpa margin. ")
       + `Ukuran file mengikuti pilihan di bawah (${cm[0]} × ${cm[1]} cm).`;
   draw();
@@ -579,12 +596,12 @@ function applyPage() {
 function render(g, S) {
   g.save();
   g.scale(S, S);
-  if (PWd !== W || PHd !== H) {
+  if (tpl !== "D" && (PWd !== W || PHd !== H)) {
     g.fillStyle = marginColor(); g.fillRect(0, 0, PWd, PHd);
     g.translate(PX, PY);
     g.beginPath(); g.rect(0, 0, W, H); g.clip();
   }
-  g.fillStyle = tpl === "A" ? "#f1ece1" : "#ffffff"; g.fillRect(0, 0, W, H);
+  g.fillStyle = tpl === "A" ? "#f1ece1" : "#ffffff"; g.fillRect(0, 0, tpl === "D" ? PWd : W, tpl === "D" ? PHd : H);
   if (tpl === "A") {
     blob(g, 0, 0, 260, 170, "rgba(214,196,170,.45)");
     blob(g, W, H, 300, 170, "rgba(214,196,170,.45)");
@@ -635,6 +652,9 @@ function setTpl(t) {
   $("tC").classList.toggle("on", t === "C");
   $("tD").classList.toggle("on", t === "D");
   $("qrsub").style.display = $("qrsubL").style.display = t === "D" ? "" : "none";
+  const cust = !!(Q.get("o") && Q.get("e") && Q.get("t")); // halaman pelanggan: pengaturan cetak disembunyikan
+  $("po").style.display = t === "D" ? "" : "none";
+  $("qrOverL").style.display = t === "D" && !cust ? "" : "none";
   ["title", "sub", "foot"].forEach((id) => { const on = t !== "D"; $(id).style.display = on ? "" : "none"; const l = $(id).previousElementSibling; if (l && l.tagName === "LABEL") l.style.display = on ? "" : "none"; });
   $("calBox").style.display = t === "A" ? "block" : "none";
   fillThemes(t); $("themeBox").style.display = t === "C" ? "block" : "none"; // tema hanya untuk 12 bulan bayi
@@ -651,8 +671,8 @@ $("tA").onclick = () => setTpl("A");
 $("tB").onclick = () => setTpl("B");
 $("tC").onclick = () => setTpl("C");
 $("tD").onclick = () => setTpl("D");
-["ps", "pwcm", "phcm"].forEach((id) => $(id).addEventListener("input", applyPage));
-$("ps").addEventListener("change", applyPage);
+["ps", "pwcm", "phcm", "po", "qrOver"].forEach((id) => $(id).addEventListener("input", applyPage));
+["ps", "po", "qrOver"].forEach((id) => $(id).addEventListener("change", applyPage));
 const TPLNAME = { A: "galeri", B: "linimasa", C: "bayi", D: "polos" };
 function renderPng() {
   const S = +$("q").value, c = document.createElement("canvas");
@@ -664,7 +684,8 @@ function renderPng() {
 function posterName(order) {
   const th = tpl === "C" && $("theme").value ? "-" + $("theme").value : "";
   const cm = pageCm(), sz = cm ? "-" + cm.map((x) => String(x).replace(".", "_")).join("x") + "cm" : "";
-  return ("poster-" + TPLNAME[tpl] + th + "-" + order + sz).replace(/[^A-Za-z0-9_-]/g, "");
+  const ori = tpl === "D" && $("po").value === "l" ? "-lanskap" : "";
+  return ("poster-" + TPLNAME[tpl] + th + "-" + order + sz + ori).replace(/[^A-Za-z0-9_-]/g, "");
 }
 function orderId() {
   let o = (typeof CU !== "undefined" && CU.o) || ORDER || "";
@@ -765,7 +786,7 @@ if (CUST) {
   const hide = (id) => { const el = $(id); el.style.display = "none"; const l = el.previousElementSibling; if (l && l.tagName === "LABEL") l.style.display = "none"; };
   ["link", "n"].forEach(hide);
   $("dl").parentNode.style.display = "none";
-  $("ps").parentNode.style.display = $("customRow").style.display = $("psInfo").style.display = "none";
+  $("ps").parentNode.style.display = $("customRow").style.display = $("psInfo").style.display = $("qrOverL").style.display = "none";
   pick = function () {};
   $("link").value = WORKER_URL + "/s/" + encodeURIComponent(CU.o);
   makeQR();
