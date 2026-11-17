@@ -144,6 +144,9 @@ const UPLOAD_CONCURRENCY = 3;  // jumlah file yang diunggah bersamaan
 const CHUNK_MB = 6;            // video dipotong per sekian MB (minimal 5 MB, aturan Cloudinary)
 const MAX_PHOTO_MB = 10;       // batas file foto di akun gratis Cloudinary
 const MAX_VIDEO_MB = 100;      // batas file video di akun gratis Cloudinary
+const BIG_MB = 95;             // video lebih besar dari ini tidak lewat Cloudinary, langsung ke R2 lewat Worker (bertahap)
+const MAX_BIG_MB = 600;        // batas video besar
+const BIG_PART_MB = 8;         // ukuran tiap bagian unggahan bertahap (R2: minimal 5 MB kecuali bagian terakhir)
 const POLL_MS = 5000;
 const POLL_MAX_MIN = 30;
 
@@ -537,6 +540,44 @@ async function uploadToCloudinary(order, kind, name, file, onProgress) {
   return result;
 }
 
+// Video besar: dikirim bertahap langsung ke R2 lewat Worker. Dikompres belakangan oleh GitHub Actions.
+function putPart(url, blob, onProgress) {
+  return new Promise((resolve, reject) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", url);
+    x.setRequestHeader("Authorization", "Bearer " + $("pw").value);
+    x.setRequestHeader("Content-Type", "application/octet-stream");
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(e.loaded / e.total); };
+    x.onload = () => {
+      let d = {};
+      try { d = JSON.parse(x.responseText); } catch (_) {}
+      if (x.status >= 200 && x.status < 300) return resolve(d);
+      reject(new Error(d.error || "Gagal mengirim bagian (" + x.status + ")"));
+    };
+    x.onerror = () => reject(new Error("Koneksi terputus saat mengirim video besar"));
+    x.send(blob);
+  });
+}
+async function uploadBig(order, name, file, onProgress) {
+  const q = "order=" + encodeURIComponent(order) + "&name=" + encodeURIComponent(name);
+  const { uploadId } = await withRetry(() => api("/big/start?" + q, { method: "POST" }));
+  const size = file.size, step = BIG_PART_MB * 1048576, parts = [];
+  try {
+    for (let start = 0, n = 1; start < size; start += step, n++) {
+      const end = Math.min(start + step, size), blob = file.slice(start, end);
+      const url = `${WORKER_URL}/big/part?${q}&uploadId=${encodeURIComponent(uploadId)}&part=${n}`;
+      const r = await withRetry(() => putPart(url, blob, (f) => onProgress((start + f * (end - start)) / size)));
+      parts.push({ partNumber: r.partNumber, etag: r.etag });
+    }
+    return await withRetry(() =>
+      api(`/big/finish?${q}&uploadId=${encodeURIComponent(uploadId)}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ parts }) })
+    );
+  } catch (e) {
+    api(`/big/abort?${q}&uploadId=${encodeURIComponent(uploadId)}`, { method: "POST" }).catch(() => {});
+    throw e;
+  }
+}
+
 // Worker mengambil versi terkompresi dari Cloudinary, menyimpan ke R2, lalu menghapusnya di Cloudinary
 async function ingest(order, kind, name) {
   const start = Date.now();
@@ -596,7 +637,7 @@ $("goBtn").addEventListener("click", async () => {
 
     // cek ukuran dulu supaya tidak gagal di tengah jalan
     jobs.forEach((job) => {
-      const limitMb = job.kind === "photos" ? MAX_PHOTO_MB : MAX_VIDEO_MB;
+      const limitMb = job.kind === "photos" ? MAX_PHOTO_MB : MAX_BIG_MB;
       if (job.file.size > limitMb * 1048576) {
         throw new Error(`${job.label} terlalu besar (${mb(job.file.size)}, maks ${limitMb} MB).`);
       }
@@ -612,6 +653,14 @@ $("goBtn").addEventListener("click", async () => {
 
     async function runJob(j) {
       const job = jobs[j];
+      if (job.kind === "videos" && job.file.size > BIG_MB * 1048576) {
+        log(`Mengunggah ${job.label} (${mb(job.file.size)}) langsung ke R2, bertahap…`);
+        const r = await uploadBig(order, job.name, job.file, (f) => { prog[j] = f; updateBar(); });
+        prog[j] = 1;
+        updateBar();
+        log(`${job.label}: ${mb(job.file.size)} tersimpan apa adanya. Dikompres otomatis di GitHub (sekitar 1-3 menit)` + (r.compressQueued ? "." : " (pemicu kompresi gagal, jalankan manual)."), r.compressQueued ? "ok" : "bad");
+        return;
+      }
       log(`Mengunggah ${job.label} (${mb(job.file.size)})…`);
       await uploadToCloudinary(order, job.kind, job.name, job.file, (f) => { prog[j] = f * 0.7; updateBar(); });
       log(`${job.label}: dikompres, memindahkan ke R2…`);
