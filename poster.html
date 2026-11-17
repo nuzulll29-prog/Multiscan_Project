@@ -122,6 +122,10 @@ Memories</textarea>
     </select>
     <button id="dl" type="button">Simpan</button>
   </div>
+  <p class="hint" id="st2" aria-live="polite"></p>
+  <div class="row" id="dlRow">
+    <button id="dlLocal" type="button" style="background:#f3e9ee;color:#2b2030">Download ke HP</button>
+  </div>
 </div>
 
 <script>
@@ -692,8 +696,22 @@ function orderId() {
   if (!o) o = (prompt("Masukkan ID pesanan (contoh: HM001)") || "").trim();
   return /^[A-Za-z0-9_-]{1,40}$/.test(o) ? o : "";
 }
+$("dlLocal").onclick = async () => {
+  const btn = $("dlLocal"), setSt = (v) => { $("st2").textContent = v; };
+  btn.disabled = true; setSt("Membuat PNG…");
+  try {
+    const blob = await renderPng();
+    const o = (typeof CU !== "undefined" && CU.o) || ORDER || "", name = posterName(o || "tanpa-order") + ".png";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob); a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 20000);
+    setSt("Diunduh ke perangkat: " + name + " (" + (blob.size / 1048576).toFixed(1) + " MB). Cek folder Download.");
+  } catch (e) { setSt("Gagal mengunduh: " + e.message); }
+  btn.disabled = false;
+};
 $("dl").onclick = async () => {
-  const st = $("st"), btn = $("dl"), order = orderId();
+  const st = { set textContent(v) { $("st").textContent = v; $("st2").textContent = v; } }, btn = $("dl"), order = orderId();
   if (!order) { st.textContent = "ID pesanan belum diisi / tidak valid."; return; }
   let pw = sessionStorage.getItem("hm_pw") || "";
   if (!pw) { pw = prompt("Password upload") || ""; if (pw) sessionStorage.setItem("hm_pw", pw); }
@@ -785,7 +803,7 @@ if (CUST) {
   document.querySelector("h1").textContent = "Pilih Desain Poster";
   const hide = (id) => { const el = $(id); el.style.display = "none"; const l = el.previousElementSibling; if (l && l.tagName === "LABEL") l.style.display = "none"; };
   ["link", "n"].forEach(hide);
-  $("dl").parentNode.style.display = "none";
+  $("dl").parentNode.style.display = $("dlRow").style.display = $("st2").style.display = "none";
   $("ps").parentNode.style.display = $("customRow").style.display = $("psInfo").style.display = $("qrOverL").style.display = "none";
   pick = function () {};
   $("link").value = WORKER_URL + "/s/" + encodeURIComponent(CU.o);
