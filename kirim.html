@@ -44,6 +44,7 @@
 <script>
 const WORKER_URL = "https://hana-multiscan.nuzulll-29.workers.dev"; // alamat Worker, tanpa / di akhir
 const CHUNK = 6 * 1048576;
+const BIG = 95 * 1048576, MAX_BIG = 600 * 1048576, BIG_PART = 8 * 1048576; // video > 95 MB: langsung ke R2 lewat Worker, bertahap
 const Q = new URLSearchParams(location.search), N = parseInt(Q.get("n"), 10) || 0, ORDER = Q.get("o") || "";
 const AUTH = "o=" + encodeURIComponent(ORDER) + "&n=" + N + "&e=" + encodeURIComponent(Q.get("e") || "") + "&t=" + encodeURIComponent(Q.get("t") || "");
 const $ = (id) => document.getElementById(id), pad = (i) => String(i + 1).padStart(2, "0");
@@ -81,7 +82,7 @@ $("slots").addEventListener("click", (e) => {
       const blob = new Blob([await f.arrayBuffer()], { type: f.type || (k === "photo" ? "image/jpeg" : "video/mp4") }); // dibaca sekarang supaya tidak gagal nanti
       if (k === "photo") { if (blob.size > 10 * 1048576) return say("Foto maksimal 10 MB.", "var(--bad)"); slots[i].photo = blob; slots[i].thumb = URL.createObjectURL(blob); }
       else {
-        if (blob.size > 100 * 1048576) return say("Video maksimal 100 MB.", "var(--bad)");
+        if (blob.size > MAX_BIG) return say("Video maksimal 600 MB.", "var(--bad)");
         if (slots[i].vurl) URL.revokeObjectURL(slots[i].vurl);
         slots[i].video = blob; slots[i].vn = f.name; slots[i].vurl = URL.createObjectURL(blob);
       }
@@ -123,6 +124,35 @@ async function up(kind, name, blob, onp) {
     await retry(() => post(url, f, blob.slice(s, e), { "X-Unique-Upload-Id": id, "Content-Range": `bytes ${s}-${e - 1}/${blob.size}` }, (x) => onp((s + x * (e - s)) / blob.size)));
   }
 }
+// video besar: dikirim bertahap ke Worker -> R2 (dikompres belakangan oleh server)
+function putPart(url, blob, onp) {
+  return new Promise((res, rej) => {
+    const x = new XMLHttpRequest();
+    x.open("POST", url);
+    x.setRequestHeader("Content-Type", "application/octet-stream");
+    x.upload.onprogress = (e) => { if (e.lengthComputable) onp(e.loaded / e.total); };
+    x.onload = () => { let d = {}; try { d = JSON.parse(x.responseText); } catch (_) {} x.status < 300 ? res(d) : rej(new Error(d.error || "Gagal mengirim (" + x.status + ")")); };
+    x.onerror = () => rej(new Error("Koneksi terputus"));
+    x.send(blob);
+  });
+}
+async function upBig(name, blob, onp) {
+  const q = AUTH + "&order=" + encodeURIComponent(ORDER) + "&name=" + encodeURIComponent(name);
+  const post = (op, extra, body) => fetch(`${WORKER_URL}/c/big/${op}?${q}${extra || ""}`, { method: "POST", headers: body ? { "Content-Type": "application/json" } : {}, body }).then(async (r) => { const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.error || "Error " + r.status); return d; });
+  const { uploadId } = await retry(() => post("start"));
+  const parts = [];
+  try {
+    for (let s = 0, n = 1; s < blob.size; s += BIG_PART, n++) {
+      const e = Math.min(s + BIG_PART, blob.size), piece = blob.slice(s, e);
+      const r = await retry(() => putPart(`${WORKER_URL}/c/big/part?${q}&uploadId=${encodeURIComponent(uploadId)}&part=${n}`, piece, (x) => onp((s + x * (e - s)) / blob.size)));
+      parts.push({ partNumber: r.partNumber, etag: r.etag });
+    }
+    return await retry(() => post("finish", "&uploadId=" + encodeURIComponent(uploadId), JSON.stringify({ parts })));
+  } catch (err) {
+    post("abort", "&uploadId=" + encodeURIComponent(uploadId)).catch(() => {});
+    throw err;
+  }
+}
 async function ingest(kind, name) {
   for (let t = 0; t < 150; t++) {
     const r = await retry(() => api("ingest", { order: ORDER, kind, name }));
@@ -147,7 +177,11 @@ $("go").onclick = async () => {
   const worker = async () => {
     while (!fail && next < jobs.length) {
       const j = next++, [k, n, b] = jobs[j];
-      try { await retry(() => up(k, n, b, (f) => { prog[j] = f * 0.7; bar(); })); await ingest(k, n); prog[j] = 1; bar(); } catch (e) { fail = e; }
+      try {
+        if (k === "videos" && b.size > BIG) await upBig(n, b, (f) => { prog[j] = f; bar(); });
+        else { await retry(() => up(k, n, b, (f) => { prog[j] = f * 0.7; bar(); })); await ingest(k, n); }
+        prog[j] = 1; bar();
+      } catch (e) { fail = e; }
     }
   };
   await Promise.all([worker(), worker(), worker()]);
