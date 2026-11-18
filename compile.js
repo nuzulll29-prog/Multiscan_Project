@@ -82,7 +82,7 @@ async function main() {
       Key: OUTPUT_KEY,
       Body: mind,
       ContentType: "application/octet-stream",
-      CacheControl: "public, max-age=31536000, immutable",
+      CacheControl: "public, max-age=300",
     })
   );
   console.log(`Selesai: ${OUTPUT_KEY} (${(mind.length / 1024).toFixed(0)} KB)`);
