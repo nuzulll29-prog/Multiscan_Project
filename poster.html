@@ -72,18 +72,14 @@ Memories</textarea>
   <label for="qrsub" id="qrsubL">Keterangan kecil di bawah tulisan scan</label>
   <input id="qrsub" value="untuk melihat video kenangan" style="display:none">
   <div id="gBox" style="display:none">
-    <label for="gtext">Ucapan di samping QR</label>
+    <label>Ucapan di samping QR</label>
     <div class="chips" id="gChips"></div>
-    <textarea id="gtext" placeholder="Ketik ucapan, mis. Happy Birthday" rows="2"></textarea>
-    <div class="row" style="margin-top:8px">
+    <div id="gLines"></div>
+    <button type="button" class="chip" id="gAdd" style="margin:0 0 10px">+ Tambah baris</button>
+    <div class="row">
       <select id="gfont" aria-label="Font ucapan"></select>
     </div>
-    <label class="chk" style="margin-top:10px"><input type="checkbox" id="gauto" checked> Ukuran otomatis (sebesar mungkin)</label>
-    <div class="row" style="margin-top:8px">
-      <input id="gsr" type="range" min="20" max="200" step="2" value="64" aria-label="Geser ukuran" style="padding:0">
-      <input id="gsize" type="number" min="16" max="400" step="1" value="64" inputmode="numeric" aria-label="Ukuran angka" style="flex:none;width:90px">
-
-    </div>
+    <label class="chk" style="margin-top:10px"><input type="checkbox" id="gauto" checked> Pas otomatis ke area (angka = perbandingan ukuran antar baris)</label>
     <div class="row" style="margin-top:8px">
       <select id="galign" aria-label="Rata teks">
         <option value="center">Rata tengah</option>
@@ -100,7 +96,7 @@ Memories</textarea>
         <option value="#9b2c3c">Merah marun</option>
       </select>
     </div>
-    <p class="hint">Hanya tampil kalau "QR di atas foto" tidak dicentang. Teks otomatis turun baris dan mengecil kalau angka ukuran terlalu besar untuk area.</p>
+    <p class="hint">Hanya tampil kalau "QR di atas foto" tidak dicentang. Tiap baris punya ukuran sendiri. Kalau terlalu besar, semua baris mengecil bersama supaya muat.</p>
   </div>
   <label for="link">Link QR (dari halaman upload)</label>
   <input id="link" placeholder="https://.../index.html?order=HM001" inputmode="url">
@@ -477,38 +473,65 @@ function gLoad() { // pastikan font sudah termuat sebelum digambar ke canvas
   const f = gFont();
   return document.fonts.load(f.w + " 40px " + f.fam.split(",")[0]).then(draw).catch(() => {});
 }
+let GL = [{ t: "", s: 64 }]; // baris ucapan: teks + ukuran masing-masing
+function renderLines() {
+  $("gLines").innerHTML = GL.map((l, i) => `<div class="gline" data-i="${i}" style="border:1px solid #eadde3;border-radius:14px;padding:10px;margin-bottom:8px">
+    <div class="row"><input class="gt" placeholder="Baris ${i + 1}${i ? "" : ", mis. Happy Birthday"}" value="${String(l.t).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;")}"><button type="button" class="chip gdel" style="flex:none">${GL.length > 1 ? "Hapus" : "Kosongkan"}</button></div>
+    <div class="row" style="margin-top:8px"><input class="gr" type="range" min="16" max="200" step="2" value="${l.s}" aria-label="Geser ukuran baris ${i + 1}" style="padding:0"><input class="gn" type="number" min="12" max="400" value="${l.s}" inputmode="numeric" aria-label="Ukuran baris ${i + 1}" style="flex:none;width:90px"></div>
+  </div>`).join("");
+  $("gAdd").style.display = GL.length >= 6 ? "none" : "";
+}
 function gInit() {
   $("gfont").innerHTML = GFONTS.map((f) => `<option value="${f.id}" style="font-family:${f.fam}">${f.label}</option>`).join("");
   $("gChips").innerHTML = GPRESETS.map((t) => `<button type="button" class="chip">${t}</button>`).join("");
-  $("gChips").addEventListener("click", (e) => { const b = e.target.closest(".chip"); if (!b) return; $("gtext").value = b.textContent; draw(); });
-  ["gtext", "galign", "gcolor", "gauto"].forEach((id) => { $(id).addEventListener("input", draw); $(id).addEventListener("change", draw); });
-  const gSync = () => { $("gsr").disabled = $("gsize").disabled = $("gauto").checked; };
-  $("gsr").addEventListener("input", () => { $("gsize").value = $("gsr").value; draw(); });
-  $("gsize").addEventListener("input", () => { $("gsr").value = $("gsize").value; draw(); });
-  $("gauto").addEventListener("change", gSync); gSync();
+  $("gChips").addEventListener("click", (e) => { const b = e.target.closest(".chip"); if (!b) return; GL[0].t = b.textContent; renderLines(); draw(); });
+  ["galign", "gcolor", "gauto"].forEach((id) => { $(id).addEventListener("input", draw); $(id).addEventListener("change", draw); });
+  $("gAdd").addEventListener("click", () => { if (GL.length >= 6) return; GL.push({ t: "", s: 40 }); renderLines(); });
+  const gl = $("gLines");
+  gl.addEventListener("input", (e) => {
+    const row = e.target.closest(".gline"); if (!row) return;
+    const i = +row.dataset.i, c = e.target.classList;
+    if (c.contains("gt")) GL[i].t = e.target.value;
+    else if (c.contains("gr")) { GL[i].s = +e.target.value; row.querySelector(".gn").value = e.target.value; }
+    else if (c.contains("gn")) { GL[i].s = Math.max(12, +e.target.value || 12); row.querySelector(".gr").value = GL[i].s; }
+    draw();
+  });
+  gl.addEventListener("click", (e) => {
+    const d = e.target.closest(".gdel"); if (!d) return;
+    const i = +d.closest(".gline").dataset.i;
+    if (GL.length > 1) GL.splice(i, 1); else GL[0].t = "";
+    renderLines(); draw();
+  });
+  renderLines();
   $("gfont").addEventListener("change", gLoad);
   $("gfont").addEventListener("input", gLoad);
   GFONTS.forEach((f) => document.fonts.load(f.w + " 40px " + f.fam.split(",")[0]).then(draw).catch(() => {}));
 }
 function gVisible() { $("gBox").style.display = tpl === "D" && !$("qrOver").checked ? "" : "none"; }
 function greetingD(g, bx, by) {
-  const txt = String($("gtext").value || "").replace(/[ \t]+/g, " ").trim();
-  if (!txt || $("qrOver").checked) return;
+  const L = GL.map((l) => ({ t: String(l.t || "").replace(/[ \t]+/g, " ").trim(), s: Math.max(12, +l.s || 64) })).filter((l) => l.t);
+  if (!L.length || $("qrOver").checked) return;
   const x0 = DM + 6, x1 = bx - 30, maxW = x1 - x0, zoneH = DB + DC;
   if (maxW < 120) return;
-  const f = gFont(), fixed = $("gauto").checked ? 0 : Math.max(16, parseInt($("gsize").value, 10) || 64), align = $("galign").value;
-  let sz = fixed || 160, lines = [];
-  for (; sz >= 16; sz -= 2) {
-    g.font = f.w + " " + sz + "px " + f.fam;
-    lines = txt.split("\n").map((l) => l.trim()).filter(Boolean).flatMap((par) => wrap(g, par, maxW));
-    const widest = Math.max(...lines.map((l) => g.measureText(l).width));
-    if (widest <= maxW && lines.length * sz * 1.22 <= zoneH) break;
+  const f = gFont(), align = $("galign").value, maxS = Math.max(...L.map((l) => l.s));
+  let k = $("gauto").checked ? 160 / maxS : 1, rows = [], tot = 0;
+  for (;;) {
+    rows = []; tot = 0; let ok = true;
+    for (const l of L) {
+      const sz = l.s * k; g.font = f.w + " " + sz + "px " + f.fam;
+      const sub = wrap(g, l.t, maxW);
+      if (Math.max(...sub.map((x) => g.measureText(x).width)) > maxW) ok = false;
+      rows.push({ sz, sub }); tot += sub.length * sz * 1.22;
+    }
+    if (tot > zoneH) ok = false;
+    if (ok || maxS * k <= 14) break;
+    k *= 0.96;
   }
-  const lh = sz * 1.22, top = by + (zoneH - lines.length * lh) / 2;
   const ax = align === "left" ? x0 : align === "right" ? x1 : (x0 + x1) / 2;
+  let y = by + (zoneH - tot) / 2;
   g.save();
   g.fillStyle = $("gcolor").value; g.textAlign = align; g.textBaseline = "middle";
-  lines.forEach((l, k) => g.fillText(l, ax, top + lh * k + lh / 2));
+  rows.forEach((r) => { g.font = f.w + " " + r.sz + "px " + f.fam; r.sub.forEach((l) => { g.fillText(l, ax, y + r.sz * 0.61); y += r.sz * 1.22; }); });
   g.restore();
 }
 function footerD(g) {
@@ -868,7 +891,7 @@ const AUTHQ = "o=" + encodeURIComponent(CU.o) + "&n=" + encodeURIComponent(CU.n)
 function collect() {
   const v = (id) => $(id).value;
   return { tpl, theme: $("theme").value, title: v("title"), sub: v("sub"), side: v("side"), foot: v("foot"), qrcap: v("qrcap"), qrsub: v("qrsub"),
-    gtext: v("gtext"), gfont: v("gfont"), gsize: v("gsize"), gauto: $("gauto").checked, galign: v("galign"), gcolor: v("gcolor"),
+    gtext: GL.map((l) => l.t).join("\n"), glines: GL.map((l) => ({ t: l.t, s: l.s })), gfont: v("gfont"), gauto: $("gauto").checked, galign: v("galign"), gcolor: v("gcolor"),
     calOn: $("calOn").checked, ctitle: v("ctitle"), cmonth: v("cmonth"), cday: v("cday"),
     items: items.slice(0, count()).map(({ img, url, ...rest }) => rest) };
 }
@@ -877,8 +900,11 @@ function applySettings(s) {
   if (s.tpl === "C") { location.replace("bayi.html" + location.search); return; }
   if (s.tpl && s.tpl !== tpl) setTpl(s.tpl);
   ["title", "sub", "side", "foot", "qrcap", "qrsub", "ctitle", "cmonth", "cday"].forEach((k) => { if (s[k] != null) $(k).value = s[k]; });
-  ["gtext", "gfont", "galign", "gcolor"].forEach((k) => { if (s[k] != null) $(k).value = s[k]; });
-  { const n = parseInt(s.gsize, 10); if (n > 0) { $("gsize").value = n; $("gsr").value = n; } $("gauto").checked = s.gauto != null ? !!s.gauto : !(n > 0); $("gauto").dispatchEvent(new Event("change")); }
+  ["gfont", "galign", "gcolor"].forEach((k) => { if (s[k] != null) $(k).value = s[k]; });
+  { const a = Array.isArray(s.glines) && s.glines.length ? s.glines
+      : s.gtext ? String(s.gtext).split("\n").filter(Boolean).map((t, i) => ({ t, s: parseInt(s.gsize, 10) || (i ? 40 : 64) })) : null;
+    if (a) { GL = a.slice(0, 6).map((l) => ({ t: String(l.t || ""), s: +l.s || 64 })); renderLines(); }
+    $("gauto").checked = s.gauto != null ? !!s.gauto : true; }
   gLoad();
   if (s.calOn != null) $("calOn").checked = s.calOn;
   if (s.theme) $("theme").value = s.theme;
