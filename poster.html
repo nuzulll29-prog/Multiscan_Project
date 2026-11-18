@@ -154,6 +154,7 @@ Memories</textarea>
     </select>
     <button id="dl" type="button">Simpan</button>
   </div>
+  <label id="fitL" style="display:none"><input type="checkbox" id="fitVid" checked> Samakan ukuran video dengan frame (1 foto: potong foto &amp; kompilasi ulang AR)</label>
   <p class="hint" id="st2" aria-live="polite"></p>
   <div class="row" id="dlRow">
     <button id="dlLocal" type="button" style="background:#f3e9ee;color:#2b2030">Download ke HP</button>
@@ -253,7 +254,9 @@ function pick(i) {
 }
 
 // ---------- alat gambar ----------
+const COVERLOG = new Map(); // img -> ukuran bidang yang diisi foto (rasio = rasio frame di poster)
 function cover(g, img, x, y, w, h) {
+  COVERLOG.set(img, { w, h });
   const r = Math.max(w / img.width, h / img.height), sw = w / r, sh = h / r;
   g.drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, x, y, w, h);
 }
@@ -797,6 +800,7 @@ async function renderPng() {
   try { await gLoad(); } catch (_) {}
   const S = +$("q").value, c = document.createElement("canvas");
   c.width = PWd * S; c.height = PHd * S;
+  COVERLOG.clear();
   render(c.getContext("2d"), S);
   return new Promise((ok) => c.toBlob(ok, "image/png"));
 }
@@ -826,6 +830,19 @@ $("dlLocal").onclick = async () => {
   } catch (e) { setSt("Gagal mengunduh: " + e.message); }
   btn.disabled = false;
 };
+// Potong foto asli persis seperti yang tercetak (pusat-potong ke rasio frame). null = sudah full frame.
+function cropToFrame(img) {
+  const lg = COVERLOG.get(img);
+  if (!lg || !(lg.w > 0 && lg.h > 0)) throw new Error("Ukuran frame belum terbaca, coba Simpan lagi");
+  const fr = lg.w / lg.h, ir = img.width / img.height;
+  if (Math.abs(fr / ir - 1) < 0.02) return Promise.resolve(null);
+  let sw = img.width, sh = img.height;
+  if (fr > ir) sh = img.width / fr; else sw = img.height * fr;
+  const k = Math.min(1, 1200 / Math.max(sw, sh)), c = document.createElement("canvas");
+  c.width = Math.round(sw * k); c.height = Math.round(sh * k);
+  c.getContext("2d").drawImage(img, (img.width - sw) / 2, (img.height - sh) / 2, sw, sh, 0, 0, c.width, c.height);
+  return new Promise((ok) => c.toBlob(ok, "image/jpeg", 0.92));
+}
 $("dl").onclick = async () => {
   const st = { set textContent(v) { $("st").textContent = v; $("st2").textContent = v; } }, btn = $("dl"), order = orderId();
   if (!order) { st.textContent = "ID pesanan belum diisi / tidak valid."; return; }
@@ -842,6 +859,19 @@ $("dl").onclick = async () => {
     const d = await r.json().catch(() => ({}));
     if (!r.ok) { if (r.status === 401) sessionStorage.removeItem("hm_pw"); throw new Error(d.error || "Gagal menyimpan (" + r.status + ")"); }
     st.textContent = "Tersimpan di Cloudflare ✓ " + d.key;
+    if ($("fitVid").checked && ORDER_IMG && ORDER_LOADED === order && items.length === 1 && items[0].img === ORDER_IMG) {
+      st.textContent += " — memeriksa ukuran frame…";
+      const fr = await cropToFrame(items[0].img);
+      if (!fr) st.textContent = "Tersimpan ✓ " + d.key + " — foto sudah full frame, AR tidak perlu dikompilasi ulang.";
+      else {
+        st.textContent = "Mengunggah foto seukuran frame & memulai kompilasi ulang…";
+        const r2c = await fetch(WORKER_URL + "/photo-crop?order=" + encodeURIComponent(order),
+          { method: "POST", headers: { Authorization: "Bearer " + pw, "Content-Type": "image/jpeg" }, body: fr });
+        const d2 = await r2c.json().catch(() => ({}));
+        if (!r2c.ok) throw new Error(d2.error || "Gagal potong-ulang (" + r2c.status + ")");
+        st.textContent = "Poster tersimpan ✓ dan kompilasi ulang AR dimulai. Tunggu 1–2 menit sebelum scan.";
+      }
+    }
   } catch (e) { st.textContent = "Belum tersimpan: " + e.message; }
   btn.disabled = false;
 };
@@ -852,13 +882,17 @@ buildItems();
 draw();
 
 // Buka dengan poster.html?order=HM001 (opsional &t=B): foto, jumlah foto, dan link QR terisi otomatis dari R2
+let ORDER_IMG = null, ORDER_LOADED = "";
 async function loadOrder(order) {
   const st = $("st"), r2 = (window.HM_CONFIG && window.HM_CONFIG.r2Base) || "";
   if (!r2 || r2.includes("GANTI")) { st.textContent = "Alamat R2 belum diisi di config.js."; return; }
   st.textContent = "Memuat foto order " + order + "…";
   const base = r2 + "/orders/" + encodeURIComponent(order) + "/photos/";
+  const obase = r2 + "/orders/" + encodeURIComponent(order) + "/originals/";
+  const getB = (u) => fetch(u).then((r) => (r.ok ? r.blob() : null)).catch(() => null);
+  // foto asli (originals/) dipakai kalau ada, supaya potongan frame selalu dibuat dari foto utuh
   const blobs = await Promise.all(Array.from({ length: 24 }, (_, i) =>
-    fetch(base + p2(i + 1) + ".jpg").then((r) => (r.ok ? r.blob() : null)).catch(() => null)));
+    getB(obase + p2(i + 1) + ".jpg").then((b) => b || getB(base + p2(i + 1) + ".jpg"))));
   let n = 0;
   while (n < 24 && blobs[n]) n++;
   if (!n) { st.textContent = "Foto untuk order ini belum ditemukan di R2."; return; }
@@ -870,6 +904,8 @@ async function loadOrder(order) {
     cover(t.getContext("2d"), bmp, 0, 0, 128, 128);
     Object.assign(items[k], { img: bmp, url: t.toDataURL("image/jpeg", .8) });
   }
+  ORDER_IMG = n === 1 ? items[0].img : null; ORDER_LOADED = order;
+  $("fitL").style.display = n === 1 ? "" : "none";
   st.textContent = n + " foto dimuat otomatis dari order " + order + ".";
   buildItems();
   draw();
